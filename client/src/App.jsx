@@ -283,6 +283,8 @@ function App() {
         console.log("[Match] Accepting:", payload.from);
         isMatchedRef.current = true;
         isRequestingRef.current = false;
+        // CRITICAL: Tell the sender we accepted so they create their offer
+        channel.send({ type: 'broadcast', event: 'match_accept', payload: { from: myId, to: payload.from } });
         setupPC(payload.from, false);
       })
 
