@@ -181,7 +181,7 @@ function App() {
           try {
             if (payload.candidate) {
               const rtcCandidate = new RTCIceCandidate(payload.candidate);
-              if (peerConnectionRef.current.remoteDescription) {
+              if (peerConnectionRef.current.remoteDescription && peerConnectionRef.current.remoteDescription.type) {
                 await peerConnectionRef.current.addIceCandidate(rtcCandidate);
               } else {
                 peerIceQueue.current.push(rtcCandidate);
@@ -226,14 +226,31 @@ function App() {
     // Add local tracks
     stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-    // Handle remote tracks
+    // Handle remote tracks robustly
+    const remoteStreamInstance = new MediaStream();
+    setRemoteStream(remoteStreamInstance);
+    if (remoteVideo.current) remoteVideo.current.srcObject = remoteStreamInstance;
+
     pc.ontrack = (event) => {
-      console.log("Received remote track");
+      console.log("Received remote track:", event.track.kind);
+
       if (event.streams && event.streams[0]) {
-        setRemoteStream(event.streams[0]);
-        if (remoteVideo.current) remoteVideo.current.srcObject = event.streams[0];
-        setStatusText('Matched & Connected');
+        const inboundStream = event.streams[0];
+        setRemoteStream(inboundStream);
+
+        if (remoteVideo.current) {
+          if (remoteVideo.current.srcObject !== inboundStream) {
+            remoteVideo.current.srcObject = inboundStream;
+          }
+
+          // Ensure it tries to play when tracks arrive
+          remoteVideo.current.onloadedmetadata = () => {
+            console.log("Remote video metadata loaded, attempting play");
+            remoteVideo.current.play().catch(e => console.error("Auto-play prevented on remote video", e));
+          };
+        }
       }
+      setStatusText('Matched & Connected');
     };
 
     // Handle ICE candidates
