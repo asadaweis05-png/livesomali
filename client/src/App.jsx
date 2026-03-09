@@ -36,6 +36,7 @@ function App() {
   const channelRef = useRef(null);
   const isMatchedRef = useRef(false);
   const isRequestingRef = useRef(false);
+  const peerIceQueue = useRef([]);
 
   // 1. Initialize Local Media
   useEffect(() => {
@@ -74,7 +75,7 @@ function App() {
       if (availablePartners.length > 0) {
         const partnerId = availablePartners[Math.floor(Math.random() * availablePartners.length)];
         console.log('Sending match request to', partnerId);
-        isRequestingRef.current = true;
+        isRequestingRef.current = partnerId;
         channel.send({
           type: 'broadcast',
           event: 'match_request',
@@ -82,7 +83,7 @@ function App() {
         });
 
         setTimeout(() => {
-          if (!isMatchedRef.current) {
+          if (!isMatchedRef.current && isRequestingRef.current === partnerId) {
             console.log('Match request timed out');
             isRequestingRef.current = false;
             if (channelRef.current) {
@@ -101,6 +102,23 @@ function App() {
       // Matchmaking Handshake
       .on('broadcast', { event: 'match_request' }, async ({ payload }) => {
         if (payload.to === myId && !isMatchedRef.current) {
+
+          if (isRequestingRef.current) {
+            if (isRequestingRef.current === payload.from) {
+              if (myId < payload.from) {
+                console.log("Crossed requests, I am smaller ID -> initiator");
+                return; // Ignore, wait for their accept
+              } else {
+                console.log("Crossed requests, I am larger ID -> yield to receiver");
+                isRequestingRef.current = false; // Yield
+              }
+            } else {
+              console.log("I requested someone else, yielding to accept this request");
+              isRequestingRef.current = false; // Yield
+            }
+          }
+
+          console.log('Accepting match request from', payload.from);
           isMatchedRef.current = true;
           channel.send({
             type: 'broadcast',
@@ -112,8 +130,10 @@ function App() {
         }
       })
       .on('broadcast', { event: 'match_accept' }, async ({ payload }) => {
-        if (payload.to === myId && isRequestingRef.current && !isMatchedRef.current) {
+        if (payload.to === myId && isRequestingRef.current === payload.from && !isMatchedRef.current) {
+          console.log('Match accepted by', payload.from);
           isMatchedRef.current = true;
+          isRequestingRef.current = false;
           // I sent request and it was accepted -> I AM initiator
           await setupPeerConnection(payload.from, true);
         }
@@ -124,6 +144,13 @@ function App() {
           console.log("Received Offer");
           try {
             await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.offer));
+
+            // Process queued ICE candidates
+            peerIceQueue.current.forEach(async candidate => {
+              try { await peerConnectionRef.current.addIceCandidate(candidate); } catch (err) { }
+            });
+            peerIceQueue.current = [];
+
             const answer = await peerConnectionRef.current.createAnswer();
             await peerConnectionRef.current.setLocalDescription(answer);
             channel.send({
@@ -139,6 +166,13 @@ function App() {
           console.log("Received Answer");
           try {
             await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer));
+
+            // Process queued ICE candidates
+            peerIceQueue.current.forEach(async candidate => {
+              try { await peerConnectionRef.current.addIceCandidate(candidate); } catch (err) { }
+            });
+            peerIceQueue.current = [];
+
           } catch (err) { console.error("Error handling answer:", err); }
         }
       })
@@ -146,9 +180,14 @@ function App() {
         if (payload.to === myId && peerConnectionRef.current) {
           try {
             if (payload.candidate) {
-              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
+              const rtcCandidate = new RTCIceCandidate(payload.candidate);
+              if (peerConnectionRef.current.remoteDescription) {
+                await peerConnectionRef.current.addIceCandidate(rtcCandidate);
+              } else {
+                peerIceQueue.current.push(rtcCandidate);
+              }
             }
-          } catch (err) { console.error("Error adding ICE candidate:", err); }
+          } catch (err) { console.error("Error adding ICE:", err); }
         }
       })
       // Chat & Game Events
@@ -176,6 +215,7 @@ function App() {
     setPeerId(partnerId);
     setIsInitiator(isInit);
     setStatusText('Found match! Connecting...');
+    peerIceQueue.current = []; // clear queue
 
     // Update presence
     channelRef.current.track({ isReady: true, partnerId, joinedAt: Date.now() });
@@ -209,6 +249,7 @@ function App() {
 
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+        console.log("ICE Connection disconnected");
         handleNext();
       }
     };
@@ -251,6 +292,7 @@ function App() {
     setIsGaming(false);
     setPeerId(null);
     setMessages([]);
+    peerIceQueue.current = [];
     setStatusText('Searching for peer...');
 
     if (remoteVideo.current) remoteVideo.current.srcObject = null;
