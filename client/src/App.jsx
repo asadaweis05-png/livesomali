@@ -48,6 +48,7 @@ function App() {
   const channelRef = useRef(null);
   const isMatchedRef = useRef(false);
   const isRequestingRef = useRef(false);
+  const peerIdRef = useRef(null);
   const peerIceQueue = useRef([]);
 
   // 1. Initialize Local Media
@@ -128,7 +129,7 @@ function App() {
               attemptMatch(channelRef.current.presenceState());
             }
           }
-        }, 3000);
+        }, 2000); // Reduced timeout to 2s to unblock queue faster
       }
     };
 
@@ -251,6 +252,7 @@ function App() {
     console.log(`Setting up Native WebRTC. Initiator: ${isInit}`);
     setIsMatched(true);
     setPeerId(partnerId);
+    peerIdRef.current = partnerId;
     setIsInitiator(isInit);
     setStatusText('Found match! Connecting...');
     peerIceQueue.current = []; // clear queue
@@ -290,6 +292,13 @@ function App() {
       }
     };
 
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        console.log("WebRTC Connection frozen or failed");
+        handleNext();
+      }
+    };
+
     // If initiator, create and send Offer
     if (isInit) {
       try {
@@ -308,11 +317,13 @@ function App() {
   };
 
   const handleNext = () => {
-    if (peerId && channelRef.current) {
+    if (!isMatchedRef.current && !isRequestingRef.current) return; // Prevent double-execution
+
+    if (peerIdRef.current && channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'disconnect',
-        payload: { to: peerId }
+        payload: { to: peerIdRef.current }
       });
     }
 
@@ -327,10 +338,14 @@ function App() {
     setRemoteStream(null);
     setIsGaming(false);
     setPeerId(null);
+    peerIdRef.current = null;
     setMessages([]);
     peerIceQueue.current = [];
     setStatusText('Searching for peer...');
 
+    if (remoteVideo.current) {
+      remoteVideo.current.srcObject = null;
+    }
     if (channelRef.current) {
       channelRef.current.track({ isReady: true, partnerId: null, joinedAt: Date.now() });
     }
