@@ -18,40 +18,35 @@ function App() {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [statusText, setStatusText] = useState('Initializing...');
 
-  // Stats for debugging
+  // Unique session ID for this tab
   const [myId] = useState(Math.random().toString(36).substring(7));
 
   const myVideo = useRef();
   const remoteVideo = useRef();
   const connectionRef = useRef();
   const channelRef = useRef();
-
-  // Keep track of match state in a ref to avoid stale closure issues in callbacks
   const isMatchedRef = useRef(false);
+  const isRequestingRef = useRef(false);
 
   // 1. Initialize Media Stream
   useEffect(() => {
-    setStatusText('Requesting camera/mic...');
+    setStatusText('Allow Camera/Mic access...');
     navigator.mediaDevices.getUserMedia({
-      video: {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        facingMode: "user"
-      },
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
       audio: true
     })
       .then((currentStream) => {
         setStream(currentStream);
         if (myVideo.current) myVideo.current.srcObject = currentStream;
-        setStatusText('Finding match...');
+        setStatusText('Searching for peer...');
       })
       .catch(err => {
-        console.error("Error accessing media devices:", err);
-        setStatusText('Error: Camera/Mic access denied.');
+        console.error("Camera error:", err);
+        setStatusText('Error: Please enable camera/mic.');
       });
   }, []);
 
-  // 2. Persistent Supabase Channel
+  // 2. Setup Persistent Supabase Channel
   useEffect(() => {
     if (!stream) return;
 
@@ -59,31 +54,63 @@ function App() {
       config: { presence: { key: myId } }
     });
 
+    const attemptMatch = (state) => {
+      if (isMatchedRef.current || isRequestingRef.current) return;
+      const availablePartners = Object.keys(state).filter(id => {
+        const presence = state[id][0];
+        return id !== myId && !presence.partnerId && presence.isReady;
+      });
+
+      if (availablePartners.length > 0) {
+        const partnerId = availablePartners[Math.floor(Math.random() * availablePartners.length)];
+        console.log('Sending match request to', partnerId);
+        isRequestingRef.current = true;
+        channel.send({
+          type: 'broadcast',
+          event: 'match_request',
+          payload: { from: myId, to: partnerId }
+        });
+
+        setTimeout(() => {
+          if (!isMatchedRef.current) {
+            console.log('Match request timed out');
+            isRequestingRef.current = false;
+            if (channelRef.current) {
+              attemptMatch(channelRef.current.presenceState());
+            }
+          }
+        }, 3000);
+      }
+    };
+
     channel
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
         console.log('Presence update:', state);
-
-        if (!isMatchedRef.current) {
-          // Find potential partners who are ALSO not matched
-          // Note: In a production app, you'd store "isSearching" in presence metadata
-          const availablePartners = Object.keys(state).filter(id => {
-            const presence = state[id][0];
-            return id !== myId && !presence.partnerId;
+        attemptMatch(state);
+      })
+      .on('broadcast', { event: 'match_request' }, ({ payload }) => {
+        if (payload.to === myId && !isMatchedRef.current) {
+          console.log('Received match request from', payload.from);
+          isMatchedRef.current = true;
+          channel.send({
+            type: 'broadcast',
+            event: 'match_accept',
+            payload: { from: myId, to: payload.from }
           });
-
-          if (availablePartners.length > 0) {
-            // Sort to ensure both sides pick the same partner
-            availablePartners.sort();
-            const partnerId = availablePartners[0];
-            const initiator = myId < partnerId;
-            startWebRTC(partnerId, initiator);
-          }
+          startWebRTC(payload.from, false);
+        }
+      })
+      .on('broadcast', { event: 'match_accept' }, ({ payload }) => {
+        if (payload.to === myId && isRequestingRef.current && !isMatchedRef.current) {
+          console.log('Match accepted by', payload.from);
+          isMatchedRef.current = true;
+          startWebRTC(payload.from, true);
         }
       })
       .on('broadcast', { event: 'signal' }, ({ payload }) => {
         if (payload.to === myId && connectionRef.current) {
-          console.log('Received signal from', payload.from);
+          console.log('Signal received from', payload.from);
           connectionRef.current.signal(payload.signal);
         }
       })
@@ -99,14 +126,14 @@ function App() {
       })
       .on('broadcast', { event: 'disconnect' }, ({ payload }) => {
         if (payload.to === myId) {
-          console.log('Peer disconnected via broadcast');
+          console.log('Peer left match');
           handleNext();
         }
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          console.log('Subscribed to lobby');
-          await channel.track({ online_at: new Date().toISOString(), partnerId: null });
+          console.log('Successfully subscribed to Supabase lobby');
+          await channel.track({ isReady: true, partnerId: null, joinedAt: Date.now() });
         }
       });
 
@@ -115,20 +142,20 @@ function App() {
     return () => {
       channel.unsubscribe();
     };
-  }, [stream]); // NO isMatched in dependency array!
+  }, [stream]);
 
   const startWebRTC = (partnerId, initiator) => {
-    if (isMatchedRef.current) return;
+    if (isMatchedRef.current && initiator) return; // Already matched
 
-    console.log(`Attempting match with ${partnerId}, initiator: ${initiator}`);
+    console.log(`Setting up Peer. Initiator: ${initiator}, Target: ${partnerId}`);
     isMatchedRef.current = true;
     setIsMatched(true);
     setPeerId(partnerId);
     setIsInitiator(initiator);
-    setStatusText('Connecting to peer...');
+    setStatusText('Found match! Connecting...');
 
-    // Update presence to show we are busy
-    channelRef.current.track({ online_at: new Date().toISOString(), partnerId });
+    // Mark ourselves as BUSY immediately
+    channelRef.current.track({ isReady: true, partnerId, joinedAt: Date.now() });
 
     const peer = new Peer({
       initiator,
@@ -146,7 +173,7 @@ function App() {
     });
 
     peer.on('signal', (data) => {
-      console.log('Sending signal to', partnerId);
+      console.log('Broadcasting signal to partner');
       channelRef.current.send({
         type: 'broadcast',
         event: 'signal',
@@ -155,19 +182,14 @@ function App() {
     });
 
     peer.on('stream', (remoteStream) => {
-      console.log('Received remote stream');
+      console.log('Establishing live video...');
       setRemoteStream(remoteStream);
       if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
-      setStatusText('Connected');
+      setStatusText('Matched & Connected');
     });
 
     peer.on('error', (err) => {
-      console.error('WebRTC Peer Error:', err);
-      handleNext();
-    });
-
-    peer.on('close', () => {
-      console.log('Peer connection closed');
+      console.warn('Connection failed, finding new match...', err);
       handleNext();
     });
 
@@ -175,7 +197,6 @@ function App() {
   };
 
   const handleNext = () => {
-    // Tell partner we are leaving
     if (peerId && channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
@@ -190,16 +211,16 @@ function App() {
     }
 
     isMatchedRef.current = false;
+    isRequestingRef.current = false;
     setIsMatched(false);
     setRemoteStream(null);
     setIsGaming(false);
     setPeerId(null);
     setMessages([]);
-    setStatusText('Finding match...');
+    setStatusText('Searching for peer...');
 
-    // Reset presence to available
     if (channelRef.current) {
-      channelRef.current.track({ online_at: new Date().toISOString(), partnerId: null });
+      channelRef.current.track({ isReady: true, partnerId: null, joinedAt: Date.now() });
     }
   };
 
@@ -269,7 +290,7 @@ function App() {
             <video playsInline ref={remoteVideo} autoPlay />
           ) : (
             <div className="video-placeholder">
-              {isMatched ? 'Establishing Secure Connection...' : 'Searching for strangers...'}
+              {isMatched ? 'Establishing Secure Connection...' : 'Waiting for a stranger to join...'}
             </div>
           )}
           <div className="video-label">Stranger</div>
@@ -281,7 +302,7 @@ function App() {
           {messages.length === 0 && !isMatched && (
             <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}>
               <Info size={24} style={{ marginBottom: '8px' }} />
-              <p>Welcome! Once matched, you can chat here.</p>
+              <p>Match with someone to start chatting!</p>
             </div>
           )}
           {messages.map((msg, i) => (
@@ -293,7 +314,7 @@ function App() {
         <form className="chat-input" onSubmit={sendMessage}>
           <input
             type="text"
-            placeholder={isMatched ? "Type a message..." : "Waiting for match..."}
+            placeholder={isMatched ? "Type a message..." : "Waiting..."}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             disabled={!isMatched}
