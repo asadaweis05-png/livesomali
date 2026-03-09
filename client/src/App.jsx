@@ -140,7 +140,12 @@ function App() {
       })
       // Matchmaking Handshake
       .on('broadcast', { event: 'match_request' }, async ({ payload }) => {
-        if (payload.to === myId && !isMatchedRef.current) {
+        if (payload.to === myId) {
+          if (isMatchedRef.current) {
+            // Already matched. Reject instantly.
+            channel.send({ type: 'broadcast', event: 'match_reject', payload: { from: myId, to: payload.from } });
+            return;
+          }
 
           if (isRequestingRef.current) {
             if (isRequestingRef.current === payload.from) {
@@ -152,13 +157,20 @@ function App() {
                 isRequestingRef.current = false; // Yield
               }
             } else {
-              console.log("I requested someone else, yielding to accept this request");
-              isRequestingRef.current = false; // Yield
+              console.log("I requested someone else, rejecting this third-party request");
+              channel.send({ type: 'broadcast', event: 'match_reject', payload: { from: myId, to: payload.from } });
+              return;
             }
           }
 
           console.log('Accepting match request from', payload.from);
           isMatchedRef.current = true;
+          isRequestingRef.current = false;
+          peerIdRef.current = payload.from;
+
+          // INSTANTLY update presence to tell the world we are strictly busy
+          channel.track({ isReady: false, partnerId: payload.from, joinedAt: Date.now() });
+
           channel.send({
             type: 'broadcast',
             event: 'match_accept',
@@ -168,18 +180,30 @@ function App() {
           await setupPeerConnection(payload.from, false);
         }
       })
+      .on('broadcast', { event: 'match_reject' }, ({ payload }) => {
+        if (payload.to === myId && isRequestingRef.current === payload.from && !isMatchedRef.current) {
+          console.log("Match request was rejected by", payload.from);
+          isRequestingRef.current = false; // Free up to ask someone else
+          if (channelRef.current) attemptMatch(channelRef.current.presenceState());
+        }
+      })
       .on('broadcast', { event: 'match_accept' }, async ({ payload }) => {
         if (payload.to === myId && isRequestingRef.current === payload.from && !isMatchedRef.current) {
           console.log('Match accepted by', payload.from);
           isMatchedRef.current = true;
           isRequestingRef.current = false;
+          peerIdRef.current = payload.from;
+
+          // INSTANTLY update presence to tell the world we are strictly busy
+          channel.track({ isReady: false, partnerId: payload.from, joinedAt: Date.now() });
+
           // I sent request and it was accepted -> I AM initiator
           await setupPeerConnection(payload.from, true);
         }
       })
-      // WebRTC Signaling
+      // WebRTC Signaling (Secure to peerIdRef.current only)
       .on('broadcast', { event: 'webrtc_offer' }, async ({ payload }) => {
-        if (payload.to === myId && peerConnectionRef.current) {
+        if (payload.to === myId && payload.from === peerIdRef.current && peerConnectionRef.current) {
           console.log("Received Offer");
           try {
             await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.offer));
@@ -201,7 +225,7 @@ function App() {
         }
       })
       .on('broadcast', { event: 'webrtc_answer' }, async ({ payload }) => {
-        if (payload.to === myId && peerConnectionRef.current) {
+        if (payload.to === myId && payload.from === peerIdRef.current && peerConnectionRef.current) {
           console.log("Received Answer");
           try {
             await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer));
@@ -216,7 +240,7 @@ function App() {
         }
       })
       .on('broadcast', { event: 'webrtc_ice' }, async ({ payload }) => {
-        if (payload.to === myId && peerConnectionRef.current) {
+        if (payload.to === myId && payload.from === peerIdRef.current && peerConnectionRef.current) {
           try {
             if (payload.candidate) {
               const rtcCandidate = new RTCIceCandidate(payload.candidate);
