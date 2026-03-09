@@ -129,7 +129,7 @@ function App() {
               attemptMatch(channelRef.current.presenceState());
             }
           }
-        }, 2000); // Reduced timeout to 2s to unblock queue faster
+        }, 4000); // 4s timeout for slow network signaling
       }
     };
 
@@ -282,7 +282,8 @@ function App() {
     peerIceQueue.current = []; // clear queue
 
     // Update presence
-    channelRef.current.track({ isReady: true, partnerId, joinedAt: Date.now() });
+    // We are busy, so isReady is strictly false
+    channelRef.current.track({ isReady: false, partnerId, joinedAt: Date.now() });
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
     peerConnectionRef.current = pc;
@@ -316,7 +317,18 @@ function App() {
       }
     };
 
+    // Strict WebRTC fallback timeout: If connection isn't established in 12 seconds, drop it
+    const connectionTimeout = setTimeout(() => {
+      if (pc.connectionState !== 'connected' && pc.connectionState !== 'completed') {
+        console.log("WebRTC Connection timed out. Dropping dead partner.");
+        handleNext();
+      }
+    }, 12000);
+
     pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected' || pc.connectionState === 'completed') {
+        clearTimeout(connectionTimeout); // Successfully connected, cancel timeout
+      }
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
         console.log("WebRTC Connection frozen or failed");
         handleNext();
@@ -341,7 +353,11 @@ function App() {
   };
 
   const handleNext = () => {
-    if (!isMatchedRef.current && !isRequestingRef.current) return; // Prevent double-execution
+    // If we are completely idle and user clicks next, try to match manually
+    if (!isMatchedRef.current && !isRequestingRef.current) {
+      if (channelRef.current) attemptMatch(channelRef.current.presenceState());
+      return;
+    }
 
     if (peerIdRef.current && channelRef.current) {
       channelRef.current.send({
@@ -352,6 +368,9 @@ function App() {
     }
 
     if (peerConnectionRef.current) {
+      // Clear event listeners before closing to prevent cascading handleNext calls
+      peerConnectionRef.current.onconnectionstatechange = null;
+      peerConnectionRef.current.oniceconnectionstatechange = null;
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
