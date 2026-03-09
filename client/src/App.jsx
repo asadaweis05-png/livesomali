@@ -233,8 +233,20 @@ function App() {
         const inboundStream = event.streams[0];
         setRemoteStream(inboundStream);
 
-        if (remoteVideo.current && remoteVideo.current.srcObject !== inboundStream) {
-          remoteVideo.current.srcObject = inboundStream;
+        if (remoteVideo.current) {
+          // Forcefully re-assign the source object
+          if (remoteVideo.current.srcObject !== inboundStream) {
+            remoteVideo.current.srcObject = inboundStream;
+          }
+
+          // Mobile browsers strictly require playing after metadata is loaded for WebRTC
+          remoteVideo.current.onloadedmetadata = () => {
+            console.log("Metadata loaded, playing remote video...");
+            remoteVideo.current.play().catch(e => console.error("Auto-play prevented (metadata):", e));
+          };
+
+          // Backup standard play attempt
+          remoteVideo.current.play().catch(e => console.log("Auto-play prevented (direct):", e));
         }
       }
       setStatusText('Matched & Connected');
