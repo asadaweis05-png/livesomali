@@ -1,16 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import io from 'socket.io-client';
 import Peer from 'simple-peer';
 import { Video, VideoOff, Mic, MicOff, MessageCircle, Gamepad2, SkipForward } from 'lucide-react';
 import './App.css';
 import TicTacToe from './components/TicTacToe';
-
-// IMPORTANT: Replace this with your deployed backend URL (e.g., on Render or Railway)
-const BACKEND_URL = window.location.hostname === 'localhost'
-  ? 'http://localhost:5000'
-  : 'https://livesomali-backend.onrender.com'; // Example placeholder
-
-const socket = io(BACKEND_URL);
+import { supabase } from './supabase';
 
 function App() {
   const [stream, setStream] = useState(null);
@@ -23,97 +16,111 @@ function App() {
   const [isInitiator, setIsInitiator] = useState(false);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(true);
+  const [myId] = useState(Math.random().toString(36).substring(7));
 
   const myVideo = useRef();
   const remoteVideo = useRef();
   const connectionRef = useRef();
+  const channelRef = useRef();
 
-  // 1. Initialize Media Stream once with HD Constraints
+  // 1. Initialize Media Stream
   useEffect(() => {
     navigator.mediaDevices.getUserMedia({
-      video: {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        facingMode: "user"
-      },
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
       audio: true
     })
       .then((currentStream) => {
         setStream(currentStream);
-        if (myVideo.current) {
-          myVideo.current.srcObject = currentStream;
-        }
+        if (myVideo.current) myVideo.current.srcObject = currentStream;
       })
       .catch(err => console.error("Error accessing media devices:", err));
   }, []);
 
-  // 2. Setup Socket Listeners
+  // 2. Setup Supabase Realtime for Matchmaking and Signaling
   useEffect(() => {
-    socket.on('match_found', ({ peerId, initiator }) => {
-      console.log('Match found:', peerId, 'Initiator:', initiator);
-      setPeerId(peerId);
-      setIsMatched(true);
-      setIsInitiator(initiator);
-      setIsGaming(false);
-      setMessages([]);
+    if (!stream) return;
 
-      const peer = new Peer({
-        initiator: initiator,
-        trickle: false,
-        stream: stream,
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' },
-          ]
+    const channel = supabase.channel('lobby', {
+      config: { presence: { key: myId } }
+    });
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        console.log('Presence state:', state);
+
+        // Matchmaking logic: If we are not matched, find someone else who isn't matched
+        if (!isMatched) {
+          const availableUsers = Object.keys(state).filter(id => id !== myId);
+          if (availableUsers.length > 0) {
+            const partnerId = availableUsers[0];
+            // To avoid race conditions, the user with "lower" ID initiates
+            const initiator = myId < partnerId;
+            startWebRTC(partnerId, initiator);
+          }
+        }
+      })
+      .on('broadcast', { event: 'signal' }, ({ payload }) => {
+        if (payload.to === myId && connectionRef.current) {
+          connectionRef.current.signal(payload.signal);
+        }
+      })
+      .on('broadcast', { event: 'chat' }, ({ payload }) => {
+        if (payload.to === myId) {
+          setMessages((prev) => [...prev, { text: payload.message, sent: false }]);
+        }
+      })
+      .on('broadcast', { event: 'game' }, ({ payload }) => {
+        if (payload.to === myId && payload.type === 'start_game') {
+          setIsGaming(true);
+        }
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ online_at: new Date().toISOString() });
         }
       });
 
-      peer.on('signal', (data) => {
-        socket.emit('signal', { peerId, signal: data });
-      });
-
-      peer.on('stream', (remoteStream) => {
-        setRemoteStream(remoteStream);
-        if (remoteVideo.current) {
-          remoteVideo.current.srcObject = remoteStream;
-        }
-      });
-
-      connectionRef.current = peer;
-    });
-
-    socket.on('signal', (data) => {
-      if (connectionRef.current) {
-        connectionRef.current.signal(data.signal);
-      }
-    });
-
-    socket.on('receive_message', ({ message }) => {
-      setMessages((prev) => [...prev, { text: message, sent: false }]);
-    });
-
-    socket.on('game_action', (data) => {
-      if (data.type === 'start_game') {
-        setIsGaming(true);
-      }
-    });
-
-    socket.on('peer_disconnected', () => {
-      handleNext();
-    });
+    channelRef.current = channel;
 
     return () => {
-      socket.off('match_found');
-      socket.off('signal');
-      socket.off('receive_message');
-      socket.off('game_action');
-      socket.off('peer_disconnected');
+      channel.unsubscribe();
     };
-  }, [stream]);
+  }, [stream, isMatched]);
+
+  const startWebRTC = (partnerId, initiator) => {
+    console.log(`Starting WebRTC with ${partnerId}, initiator: ${initiator}`);
+    setIsMatched(true);
+    setPeerId(partnerId);
+    setIsInitiator(initiator);
+
+    const peer = new Peer({
+      initiator,
+      trickle: false,
+      stream,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      }
+    });
+
+    peer.on('signal', (data) => {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'signal',
+        payload: { to: partnerId, signal: data }
+      });
+    });
+
+    peer.on('stream', (remoteStream) => {
+      setRemoteStream(remoteStream);
+      if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
+    });
+
+    connectionRef.current = peer;
+  };
 
   const handleNext = () => {
     if (connectionRef.current) {
@@ -124,22 +131,30 @@ function App() {
     setIsMatched(false);
     setIsGaming(false);
     setPeerId(null);
-    socket.emit('find_match');
+    setMessages([]);
   };
 
   const sendMessage = (e) => {
     e.preventDefault();
-    if (inputText.trim() && isMatched) {
-      socket.emit('send_message', inputText);
+    if (inputText.trim() && isMatched && peerId) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'chat',
+        payload: { to: peerId, message: inputText }
+      });
       setMessages((prev) => [...prev, { text: inputText, sent: true }]);
       setInputText('');
     }
   };
 
   const startGame = () => {
-    if (isMatched) {
+    if (isMatched && peerId) {
       setIsGaming(true);
-      socket.emit('game_action', { type: 'start_game' });
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'game',
+        payload: { to: peerId, type: 'start_game' }
+      });
     }
   };
 
@@ -175,10 +190,7 @@ function App() {
           <video playsInline muted ref={myVideo} autoPlay />
           <div style={{ position: 'absolute', bottom: 10, left: 10, color: '#fff', fontSize: '0.8rem' }}>You</div>
           {!videoEnabled && (
-            <div style={{
-              position: 'absolute', inset: 0, background: '#000',
-              display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
+            <div style={{ position: 'absolute', inset: 0, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <VideoOff size={48} color="rgba(255,255,255,0.1)" />
             </div>
           )}
@@ -225,7 +237,8 @@ function App() {
 
       {isGaming && isMatched && (
         <TicTacToe
-          socket={socket}
+          channel={channelRef.current}
+          peerId={peerId}
           isInitiator={isInitiator}
           onDispose={() => setIsGaming(false)}
         />

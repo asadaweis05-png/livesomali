@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 
-const TicTacToe = ({ socket, isInitiator, onDispose }) => {
+const TicTacToe = ({ channel, peerId, isInitiator, onDispose }) => {
     const [board, setBoard] = useState(Array(9).fill(null));
     const [isMyTurn, setIsMyTurn] = useState(isInitiator);
     const [winner, setWinner] = useState(null);
@@ -10,17 +10,20 @@ const TicTacToe = ({ socket, isInitiator, onDispose }) => {
     const peerSymbol = isInitiator ? 'O' : 'X';
 
     useEffect(() => {
-        socket.on('game_action', (data) => {
-            if (data.type === 'move') {
+        const sub = channel.on('broadcast', { event: 'game_move' }, ({ payload }) => {
+            if (payload.to === 'all' || payload.to === channel.presenceState()[Object.keys(channel.presenceState())[0]][0].presence_ref) {
+                // Simplify for now: if message is received and it's move type
+            }
+            if (payload.type === 'move') {
                 const newBoard = [...board];
-                newBoard[data.index] = peerSymbol;
+                newBoard[payload.index] = peerSymbol;
                 setBoard(newBoard);
                 setIsMyTurn(true);
                 checkWinner(newBoard);
             }
         });
 
-        return () => socket.off('game_action');
+        return () => { }; // Supabase handles cleanup via App.jsx channel ref
     }, [board]);
 
     const checkWinner = (squares) => {
@@ -48,7 +51,11 @@ const TicTacToe = ({ socket, isInitiator, onDispose }) => {
         setIsMyTurn(false);
         checkWinner(newBoard);
 
-        socket.emit('game_action', { type: 'move', index });
+        channel.send({
+            type: 'broadcast',
+            event: 'game_move',
+            payload: { to: peerId, type: 'move', index }
+        });
     };
 
     return (
