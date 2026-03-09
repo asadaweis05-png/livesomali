@@ -226,11 +226,6 @@ function App() {
     // Add local tracks
     stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-    // Handle remote tracks robustly
-    const remoteStreamInstance = new MediaStream();
-    setRemoteStream(remoteStreamInstance);
-    if (remoteVideo.current) remoteVideo.current.srcObject = remoteStreamInstance;
-
     pc.ontrack = (event) => {
       console.log("Received remote track:", event.track.kind);
 
@@ -238,16 +233,8 @@ function App() {
         const inboundStream = event.streams[0];
         setRemoteStream(inboundStream);
 
-        if (remoteVideo.current) {
-          if (remoteVideo.current.srcObject !== inboundStream) {
-            remoteVideo.current.srcObject = inboundStream;
-          }
-
-          // Ensure it tries to play when tracks arrive
-          remoteVideo.current.onloadedmetadata = () => {
-            console.log("Remote video metadata loaded, attempting play");
-            remoteVideo.current.play().catch(e => console.error("Auto-play prevented on remote video", e));
-          };
+        if (remoteVideo.current && remoteVideo.current.srcObject !== inboundStream) {
+          remoteVideo.current.srcObject = inboundStream;
         }
       }
       setStatusText('Matched & Connected');
