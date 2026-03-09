@@ -59,12 +59,6 @@ function App() {
     })
       .then((currentStream) => {
         setStream(currentStream);
-        if (myVideo.current) {
-          myVideo.current.srcObject = currentStream;
-          myVideo.current.onloadedmetadata = () => {
-            myVideo.current.play().catch(e => console.error("Local video play error:", e));
-          };
-        }
         setStatusText('Searching for peer...');
       })
       .catch(err => {
@@ -73,7 +67,34 @@ function App() {
       });
   }, []);
 
-  // 2. Setup Native WebRTC & Supabase Signaling
+  // 2. React stream binding - securely link media streams to video elements
+  useEffect(() => {
+    if (myVideo.current && stream) {
+      if (myVideo.current.srcObject !== stream) {
+        myVideo.current.srcObject = stream;
+        myVideo.current.onloadedmetadata = () => {
+          myVideo.current.play().catch(e => console.error("Local play err:", e));
+        };
+      }
+    }
+  }, [stream]);
+
+  useEffect(() => {
+    if (remoteVideo.current && remoteStream) {
+      if (remoteVideo.current.srcObject !== remoteStream) {
+        remoteVideo.current.srcObject = remoteStream;
+        remoteVideo.current.onloadedmetadata = () => {
+          remoteVideo.current.play().catch(e => console.error("Remote play err:", e));
+        };
+        // fallback robust play
+        remoteVideo.current.play().catch(e => console.log("Remote play err2:", e));
+      }
+    } else if (remoteVideo.current && !remoteStream) {
+      remoteVideo.current.srcObject = null;
+    }
+  }, [remoteStream, isMatched]);
+
+  // 3. Setup Native WebRTC & Supabase Signaling
   useEffect(() => {
     if (!stream) return;
 
@@ -245,26 +266,8 @@ function App() {
 
     pc.ontrack = (event) => {
       console.log("Received remote track:", event.track.kind);
-
       if (event.streams && event.streams[0]) {
-        const inboundStream = event.streams[0];
-        setRemoteStream(inboundStream);
-
-        if (remoteVideo.current) {
-          // Forcefully re-assign the source object
-          if (remoteVideo.current.srcObject !== inboundStream) {
-            remoteVideo.current.srcObject = inboundStream;
-          }
-
-          // Mobile browsers strictly require playing after metadata is loaded for WebRTC
-          remoteVideo.current.onloadedmetadata = () => {
-            console.log("Metadata loaded, playing remote video...");
-            remoteVideo.current.play().catch(e => console.error("Auto-play prevented (metadata):", e));
-          };
-
-          // Backup standard play attempt
-          remoteVideo.current.play().catch(e => console.log("Auto-play prevented (direct):", e));
-        }
+        setRemoteStream(event.streams[0]);
       }
       setStatusText('Matched & Connected');
     };
@@ -282,7 +285,7 @@ function App() {
 
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
-        console.log("ICE Connection disconnected");
+        console.log("ICE Connection disconnected/failed");
         handleNext();
       }
     };
@@ -327,8 +330,6 @@ function App() {
     setMessages([]);
     peerIceQueue.current = [];
     setStatusText('Searching for peer...');
-
-    if (remoteVideo.current) remoteVideo.current.srcObject = null;
 
     if (channelRef.current) {
       channelRef.current.track({ isReady: true, partnerId: null, joinedAt: Date.now() });
@@ -397,9 +398,13 @@ function App() {
           )}
         </div>
         <div className="video-wrapper glass">
-          {remoteStream ? (
-            <video playsInline ref={remoteVideo} autoPlay />
-          ) : (
+          <video
+            playsInline
+            ref={remoteVideo}
+            autoPlay
+            style={{ display: remoteStream ? 'block' : 'none', width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+          {!remoteStream && (
             <div className="video-placeholder">
               {isMatched ? 'Establishing Secure Connection...' : 'Waiting for a stranger to join...'}
             </div>
