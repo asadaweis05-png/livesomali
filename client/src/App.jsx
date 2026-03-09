@@ -59,7 +59,12 @@ function App() {
     })
       .then((currentStream) => {
         setStream(currentStream);
-        if (myVideo.current) myVideo.current.srcObject = currentStream;
+        if (myVideo.current) {
+          myVideo.current.srcObject = currentStream;
+          myVideo.current.onloadedmetadata = () => {
+            myVideo.current.play().catch(e => console.error("Local video play error:", e));
+          };
+        }
         setStatusText('Searching for peer...');
       })
       .catch(err => {
