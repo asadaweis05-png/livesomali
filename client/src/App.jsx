@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Video, VideoOff, Mic, MicOff, MessageCircle, Gamepad2, SkipForward, Info } from 'lucide-react';
 import './App.css';
 import TicTacToe from './components/TicTacToe';
 import { supabase } from './supabase';
 
-// Working STUN & TURN servers for NAT traversal
+// Working STUN & TURN servers
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -48,203 +48,64 @@ function App() {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [statusText, setStatusText] = useState('Initializing...');
 
-  const [myId] = useState(Math.random().toString(36).substring(7));
+  // Stable ID that never changes
+  const myIdRef = useRef(Math.random().toString(36).substring(7));
+  const myId = myIdRef.current;
 
+  // Refs for DOM and WebRTC
   const myVideo = useRef(null);
   const remoteVideo = useRef(null);
-  const peerConnectionRef = useRef(null);
+  const pcRef = useRef(null);
   const channelRef = useRef(null);
   const streamRef = useRef(null);
+  const iceQueueRef = useRef([]);
+  const timeoutRef = useRef(null);
+
+  // State refs (accessible from closures without stale values)
   const isMatchedRef = useRef(false);
   const isRequestingRef = useRef(false);
   const peerIdRef = useRef(null);
-  const peerIceQueue = useRef([]);
-  const connectionTimeoutRef = useRef(null);
 
-  // Keep stream ref in sync so callbacks always have latest
+  // Keep stream ref in sync
   useEffect(() => { streamRef.current = stream; }, [stream]);
 
-  // 1. Initialize Local Media
+  // 1. Get camera/mic
   useEffect(() => {
     setStatusText('Allow Camera/Mic access...');
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then((currentStream) => {
-        setStream(currentStream);
-        setStatusText('Searching for peer...');
-      })
+      .then(s => { setStream(s); setStatusText('Searching for peer...'); })
       .catch(err => {
         console.error("Camera error:", err);
         setStatusText('Error: Please allow camera/mic access.');
       });
   }, []);
 
-  // 2. Bind local stream to video element
+  // 2. Bind local video
   useEffect(() => {
     if (myVideo.current && stream) {
       myVideo.current.srcObject = stream;
-      myVideo.current.onloadedmetadata = () => {
-        myVideo.current.play().catch(() => { });
-      };
+      myVideo.current.onloadedmetadata = () => myVideo.current.play().catch(() => { });
     }
   }, [stream]);
 
-  // 3. Bind remote stream to video element
+  // 3. Bind remote video
   useEffect(() => {
-    if (remoteVideo.current && remoteStream) {
-      remoteVideo.current.srcObject = remoteStream;
-      remoteVideo.current.onloadedmetadata = () => {
-        remoteVideo.current.play().catch(() => { });
-      };
-      remoteVideo.current.play().catch(() => { });
-    } else if (remoteVideo.current && !remoteStream) {
-      remoteVideo.current.srcObject = null;
+    const el = remoteVideo.current;
+    if (!el) return;
+    if (remoteStream) {
+      el.srcObject = remoteStream;
+      el.onloadedmetadata = () => el.play().catch(() => { });
+      el.play().catch(() => { });
+    } else {
+      el.srcObject = null;
     }
   }, [remoteStream]);
 
-  // ---- Core Functions (defined at component level for proper scoping) ----
-
-  const cleanupConnection = useCallback(() => {
-    if (connectionTimeoutRef.current) {
-      clearTimeout(connectionTimeoutRef.current);
-      connectionTimeoutRef.current = null;
-    }
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.onconnectionstatechange = null;
-      peerConnectionRef.current.oniceconnectionstatechange = null;
-      peerConnectionRef.current.onicecandidate = null;
-      peerConnectionRef.current.ontrack = null;
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-  }, []);
-
-  const resetToLobby = useCallback(() => {
-    cleanupConnection();
-    isMatchedRef.current = false;
-    isRequestingRef.current = false;
-    peerIdRef.current = null;
-    peerIceQueue.current = [];
-    setIsMatched(false);
-    setRemoteStream(null);
-    setIsGaming(false);
-    setPeerId(null);
-    setMessages([]);
-    setStatusText('Searching for peer...');
-    if (remoteVideo.current) remoteVideo.current.srcObject = null;
-    // Re-advertise as available
-    if (channelRef.current) {
-      channelRef.current.track({ isReady: true, partnerId: null, joinedAt: Date.now() });
-    }
-  }, [cleanupConnection]);
-
-  const handleNext = useCallback(() => {
-    // Notify partner we are leaving
-    if (peerIdRef.current && channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast', event: 'disconnect',
-        payload: { to: peerIdRef.current }
-      });
-    }
-    resetToLobby();
-  }, [resetToLobby]);
-
-  const setupPeerConnection = useCallback((partnerId, isInit) => {
-    console.log(`Setting up WebRTC. Initiator: ${isInit}, Partner: ${partnerId}`);
-    setIsMatched(true);
-    setPeerId(partnerId);
-    peerIdRef.current = partnerId;
-    setIsInitiator(isInit);
-    setStatusText('Found match! Connecting...');
-    peerIceQueue.current = [];
-
-    // Mark ourselves as busy
-    if (channelRef.current) {
-      channelRef.current.track({ isReady: false, partnerId, joinedAt: Date.now() });
-    }
-
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-    peerConnectionRef.current = pc;
-
-    // Add local tracks
-    const currentStream = streamRef.current;
-    if (currentStream) {
-      currentStream.getTracks().forEach(track => pc.addTrack(track, currentStream));
-    }
-
-    // Receive remote tracks
-    pc.ontrack = (event) => {
-      console.log("Got remote track:", event.track.kind);
-      if (event.streams && event.streams[0]) {
-        setRemoteStream(event.streams[0]);
-      }
-      setStatusText('Matched & Connected');
-    };
-
-    // Send ICE candidates to partner
-    pc.onicecandidate = (event) => {
-      if (event.candidate && channelRef.current) {
-        channelRef.current.send({
-          type: 'broadcast', event: 'webrtc_ice',
-          payload: { to: partnerId, from: myId, candidate: event.candidate.toJSON() }
-        });
-      }
-    };
-
-    // Only drop on permanent failure, NOT on transient "disconnected"
-    pc.oniceconnectionstatechange = () => {
-      console.log("ICE state:", pc.iceConnectionState);
-      if (pc.iceConnectionState === 'failed') {
-        console.log("ICE permanently failed");
-        handleNext();
-      }
-    };
-
-    // Connection timeout: 15 seconds to establish
-    if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
-    connectionTimeoutRef.current = setTimeout(() => {
-      if (pc === peerConnectionRef.current && pc.connectionState !== 'connected') {
-        console.log("Connection timed out after 15s");
-        handleNext();
-      }
-    }, 15000);
-
-    pc.onconnectionstatechange = () => {
-      console.log("Connection state:", pc.connectionState);
-      if (pc.connectionState === 'connected') {
-        if (connectionTimeoutRef.current) {
-          clearTimeout(connectionTimeoutRef.current);
-          connectionTimeoutRef.current = null;
-        }
-      }
-      if (pc.connectionState === 'failed') {
-        console.log("Connection permanently failed");
-        handleNext();
-      }
-    };
-
-    // Initiator creates and sends the offer
-    if (isInit) {
-      // Small delay to ensure the non-initiator has their PC ready
-      setTimeout(async () => {
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          if (channelRef.current) {
-            channelRef.current.send({
-              type: 'broadcast', event: 'webrtc_offer',
-              payload: { to: partnerId, from: myId, offer: pc.localDescription.toJSON() }
-            });
-            console.log("Offer sent to", partnerId);
-          }
-        } catch (err) {
-          console.error("Error creating offer:", err);
-          handleNext();
-        }
-      }, 500);
-    }
-  }, [myId, handleNext]);
-
-  // 4. Supabase Channel & Signaling
+  // ============================================================
+  // 4. MAIN EFFECT: Channel + Matchmaking + Signaling
+  //    ALL logic lives inside this single useEffect so there
+  //    are ZERO closure/scope issues. Nothing is useCallback.
+  // ============================================================
   useEffect(() => {
     if (!stream) return;
 
@@ -253,142 +114,237 @@ function App() {
     });
     channelRef.current = channel;
 
-    const attemptMatch = (state) => {
+    // ---- Helper: cleanup current WebRTC connection ----
+    function cleanup() {
+      if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+      if (pcRef.current) {
+        pcRef.current.ontrack = null;
+        pcRef.current.onicecandidate = null;
+        pcRef.current.onconnectionstatechange = null;
+        pcRef.current.oniceconnectionstatechange = null;
+        pcRef.current.close();
+        pcRef.current = null;
+      }
+    }
+
+    // ---- Helper: reset to lobby state ----
+    function resetToLobby() {
+      cleanup();
+      isMatchedRef.current = false;
+      isRequestingRef.current = false;
+      peerIdRef.current = null;
+      iceQueueRef.current = [];
+      setIsMatched(false);
+      setRemoteStream(null);
+      setIsGaming(false);
+      setPeerId(null);
+      setMessages([]);
+      setStatusText('Searching for peer...');
+      if (remoteVideo.current) remoteVideo.current.srcObject = null;
+      channel.track({ isReady: true, partnerId: null, joinedAt: Date.now() });
+      // After resetting, try to match again
+      setTimeout(() => attemptMatch(channel.presenceState()), 500);
+    }
+
+    // ---- Helper: skip / next ----
+    function handleNext() {
+      if (peerIdRef.current) {
+        channel.send({ type: 'broadcast', event: 'disconnect', payload: { to: peerIdRef.current } });
+      }
+      resetToLobby();
+    }
+    // Expose handleNext for the button
+    window.__handleNext = handleNext;
+
+    // ---- Helper: create WebRTC peer connection ----
+    function setupPC(partnerId, isInit) {
+      console.log(`[WebRTC] Setup. Initiator=${isInit}, Partner=${partnerId}`);
+      setIsMatched(true);
+      setPeerId(partnerId);
+      peerIdRef.current = partnerId;
+      setIsInitiator(isInit);
+      setStatusText('Found match! Connecting...');
+      iceQueueRef.current = [];
+
+      channel.track({ isReady: false, partnerId, joinedAt: Date.now() });
+
+      const pc = new RTCPeerConnection(ICE_SERVERS);
+      pcRef.current = pc;
+
+      // Add local tracks
+      const s = streamRef.current;
+      if (s) s.getTracks().forEach(t => pc.addTrack(t, s));
+
+      // Receive remote tracks
+      pc.ontrack = (e) => {
+        console.log("[WebRTC] Got remote track:", e.track.kind);
+        if (e.streams?.[0]) setRemoteStream(e.streams[0]);
+        setStatusText('Matched & Connected');
+      };
+
+      // Send ICE candidates
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          channel.send({
+            type: 'broadcast', event: 'webrtc_ice',
+            payload: { to: partnerId, from: myId, candidate: e.candidate.toJSON() }
+          });
+        }
+      };
+
+      // Only drop on permanent failure
+      pc.oniceconnectionstatechange = () => {
+        console.log("[WebRTC] ICE state:", pc.iceConnectionState);
+        if (pc.iceConnectionState === 'failed') resetToLobby();
+      };
+
+      // Connection timeout: 15s
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => {
+        if (pc === pcRef.current && pc.connectionState !== 'connected') {
+          console.log("[WebRTC] Timed out after 15s");
+          resetToLobby();
+        }
+      }, 15000);
+
+      pc.onconnectionstatechange = () => {
+        console.log("[WebRTC] Connection state:", pc.connectionState);
+        if (pc.connectionState === 'connected') {
+          if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+        }
+        if (pc.connectionState === 'failed') {
+          console.log("[WebRTC] Connection failed");
+          resetToLobby();
+        }
+      };
+
+      // Initiator creates offer after a small delay (wait for receiver to be ready)
+      if (isInit) {
+        setTimeout(async () => {
+          try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            channel.send({
+              type: 'broadcast', event: 'webrtc_offer',
+              payload: { to: partnerId, from: myId, offer: pc.localDescription.toJSON() }
+            });
+            console.log("[Signal] Offer sent");
+          } catch (err) {
+            console.error("[Signal] Offer error:", err);
+            resetToLobby();
+          }
+        }, 500);
+      }
+    }
+
+    // ---- Matchmaking ----
+    function attemptMatch(state) {
       if (isMatchedRef.current || isRequestingRef.current) return;
       const available = Object.keys(state).filter(id => {
         const p = state[id]?.[0];
-        return id !== myId && p && p.isReady && !p.partnerId;
+        return id !== myId && p?.isReady && !p?.partnerId;
       });
+      if (available.length === 0) return;
 
-      if (available.length > 0) {
-        const partnerId = available[Math.floor(Math.random() * available.length)];
-        console.log('Requesting match with', partnerId);
-        isRequestingRef.current = partnerId;
-        channel.send({
-          type: 'broadcast', event: 'match_request',
-          payload: { from: myId, to: partnerId }
-        });
+      const partnerId = available[Math.floor(Math.random() * available.length)];
+      console.log("[Match] Requesting:", partnerId);
+      isRequestingRef.current = partnerId;
+      channel.send({ type: 'broadcast', event: 'match_request', payload: { from: myId, to: partnerId } });
 
-        // Timeout: if no response in 5s, retry
-        setTimeout(() => {
-          if (!isMatchedRef.current && isRequestingRef.current === partnerId) {
-            console.log('Match request timed out, retrying...');
-            isRequestingRef.current = false;
-            attemptMatch(channel.presenceState());
-          }
-        }, 5000);
-      }
-    };
+      setTimeout(() => {
+        if (!isMatchedRef.current && isRequestingRef.current === partnerId) {
+          console.log("[Match] Request timed out");
+          isRequestingRef.current = false;
+          attemptMatch(channel.presenceState());
+        }
+      }, 5000);
+    }
 
+    // ---- Channel listeners ----
     channel
-      .on('presence', { event: 'sync' }, () => {
-        attemptMatch(channel.presenceState());
-      })
+      .on('presence', { event: 'sync' }, () => attemptMatch(channel.presenceState()))
 
-      // --- Matchmaking ---
       .on('broadcast', { event: 'match_request' }, ({ payload }) => {
         if (payload.to !== myId) return;
-
         if (isMatchedRef.current) {
           channel.send({ type: 'broadcast', event: 'match_reject', payload: { from: myId, to: payload.from } });
           return;
         }
-
         if (isRequestingRef.current) {
           if (isRequestingRef.current === payload.from) {
-            // Crossed requests: lower ID wins as initiator
-            if (myId < payload.from) {
-              return; // I'm initiator, wait for their accept
-            } else {
-              isRequestingRef.current = false; // I yield
-            }
+            // Crossed requests: lower ID is initiator
+            if (myId < payload.from) return; // wait for their accept
+            isRequestingRef.current = false; // yield
           } else {
-            // I'm requesting someone else, reject this
             channel.send({ type: 'broadcast', event: 'match_reject', payload: { from: myId, to: payload.from } });
             return;
           }
         }
-
-        console.log('Accepting request from', payload.from);
+        console.log("[Match] Accepting:", payload.from);
         isMatchedRef.current = true;
         isRequestingRef.current = false;
-        peerIdRef.current = payload.from;
-        channel.track({ isReady: false, partnerId: payload.from, joinedAt: Date.now() });
-        channel.send({ type: 'broadcast', event: 'match_accept', payload: { from: myId, to: payload.from } });
-        setupPeerConnection(payload.from, false); // Receiver = NOT initiator
+        setupPC(payload.from, false);
       })
 
       .on('broadcast', { event: 'match_accept' }, ({ payload }) => {
         if (payload.to !== myId || payload.from !== isRequestingRef.current || isMatchedRef.current) return;
-        console.log('Match accepted by', payload.from);
+        console.log("[Match] Accepted by:", payload.from);
         isMatchedRef.current = true;
         isRequestingRef.current = false;
-        peerIdRef.current = payload.from;
-        channel.track({ isReady: false, partnerId: payload.from, joinedAt: Date.now() });
-        setupPeerConnection(payload.from, true); // Requester = IS initiator
+        setupPC(payload.from, true);
       })
 
       .on('broadcast', { event: 'match_reject' }, ({ payload }) => {
         if (payload.to !== myId || isMatchedRef.current) return;
         if (isRequestingRef.current === payload.from) {
-          console.log('Request rejected by', payload.from);
+          console.log("[Match] Rejected by:", payload.from);
           isRequestingRef.current = false;
           attemptMatch(channel.presenceState());
         }
       })
 
-      // --- WebRTC Signaling ---
+      // ---- WebRTC Signaling ----
       .on('broadcast', { event: 'webrtc_offer' }, async ({ payload }) => {
-        if (payload.to !== myId || payload.from !== peerIdRef.current) return;
-        if (!peerConnectionRef.current) return;
-        console.log("Received offer");
+        if (payload.to !== myId || payload.from !== peerIdRef.current || !pcRef.current) return;
+        console.log("[Signal] Got offer");
         try {
-          await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.offer));
-          const answer = await peerConnectionRef.current.createAnswer();
-          await peerConnectionRef.current.setLocalDescription(answer);
+          await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.offer));
+          const answer = await pcRef.current.createAnswer();
+          await pcRef.current.setLocalDescription(answer);
           channel.send({
             type: 'broadcast', event: 'webrtc_answer',
-            payload: { from: myId, to: payload.from, answer: peerConnectionRef.current.localDescription.toJSON() }
+            payload: { from: myId, to: payload.from, answer: pcRef.current.localDescription.toJSON() }
           });
-          console.log("Answer sent");
-          // Flush queued ICE candidates
-          const queue = [...peerIceQueue.current];
-          peerIceQueue.current = [];
-          for (const c of queue) {
-            try { await peerConnectionRef.current.addIceCandidate(c); } catch (e) { }
-          }
-        } catch (err) { console.error("Offer error:", err); }
+          console.log("[Signal] Answer sent");
+          // Flush ICE queue
+          const q = [...iceQueueRef.current]; iceQueueRef.current = [];
+          for (const c of q) { try { await pcRef.current.addIceCandidate(c); } catch (e) { } }
+        } catch (err) { console.error("[Signal] Offer handling error:", err); }
       })
 
       .on('broadcast', { event: 'webrtc_answer' }, async ({ payload }) => {
-        if (payload.to !== myId || payload.from !== peerIdRef.current) return;
-        if (!peerConnectionRef.current) return;
-        console.log("Received answer");
+        if (payload.to !== myId || payload.from !== peerIdRef.current || !pcRef.current) return;
+        console.log("[Signal] Got answer");
         try {
-          await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer));
-          // Flush queued ICE candidates
-          const queue = [...peerIceQueue.current];
-          peerIceQueue.current = [];
-          for (const c of queue) {
-            try { await peerConnectionRef.current.addIceCandidate(c); } catch (e) { }
-          }
-        } catch (err) { console.error("Answer error:", err); }
+          await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer));
+          const q = [...iceQueueRef.current]; iceQueueRef.current = [];
+          for (const c of q) { try { await pcRef.current.addIceCandidate(c); } catch (e) { } }
+        } catch (err) { console.error("[Signal] Answer handling error:", err); }
       })
 
       .on('broadcast', { event: 'webrtc_ice' }, async ({ payload }) => {
-        if (payload.to !== myId || payload.from !== peerIdRef.current) return;
-        if (!peerConnectionRef.current) return;
+        if (payload.to !== myId || payload.from !== peerIdRef.current || !pcRef.current) return;
         try {
-          const candidate = new RTCIceCandidate(payload.candidate);
-          if (peerConnectionRef.current.remoteDescription && peerConnectionRef.current.remoteDescription.type) {
-            await peerConnectionRef.current.addIceCandidate(candidate);
+          const c = new RTCIceCandidate(payload.candidate);
+          if (pcRef.current.remoteDescription?.type) {
+            await pcRef.current.addIceCandidate(c);
           } else {
-            peerIceQueue.current.push(candidate);
+            iceQueueRef.current.push(c);
           }
-        } catch (err) { console.error("ICE error:", err); }
+        } catch (err) { console.error("[Signal] ICE error:", err); }
       })
 
-      // --- Chat, Game, Disconnect ---
+      // ---- Chat, Game, Disconnect ----
       .on('broadcast', { event: 'chat' }, ({ payload }) => {
         if (payload.to === myId) setMessages(prev => [...prev, { text: payload.message, sent: false }]);
       })
@@ -399,15 +355,25 @@ function App() {
         if (payload.to === myId) resetToLobby();
       })
       .subscribe(async (status) => {
+        console.log("[Supabase] Channel status:", status);
         if (status === 'SUBSCRIBED') {
           await channel.track({ isReady: true, partnerId: null, joinedAt: Date.now() });
+          console.log("[Supabase] Tracking presence. My ID:", myId);
         }
       });
 
-    return () => { channel.unsubscribe(); };
-  }, [stream, myId, setupPeerConnection, resetToLobby]);
+    return () => {
+      cleanup();
+      channel.unsubscribe();
+      window.__handleNext = null;
+    };
+  }, [stream]); // Only re-run when stream changes (once)
 
-  // ---- UI Handlers ----
+  // ---- UI event handlers (use window.__handleNext to avoid scope issues) ----
+  const onClickNext = () => {
+    if (window.__handleNext) window.__handleNext();
+  };
+
   const sendMessage = (e) => {
     e.preventDefault();
     if (inputText.trim() && isMatched && peerId && channelRef.current) {
@@ -432,15 +398,15 @@ function App() {
 
   const toggleVideo = () => {
     if (stream) {
-      const track = stream.getVideoTracks()[0];
-      if (track) { track.enabled = !videoEnabled; setVideoEnabled(!videoEnabled); }
+      const t = stream.getVideoTracks()[0];
+      if (t) { t.enabled = !videoEnabled; setVideoEnabled(!videoEnabled); }
     }
   };
 
   const toggleAudio = () => {
     if (stream) {
-      const track = stream.getAudioTracks()[0];
-      if (track) { track.enabled = !audioEnabled; setAudioEnabled(!audioEnabled); }
+      const t = stream.getAudioTracks()[0];
+      if (t) { t.enabled = !audioEnabled; setAudioEnabled(!audioEnabled); }
     }
   };
 
@@ -528,7 +494,7 @@ function App() {
         <button className={`btn ${videoEnabled ? 'btn-primary' : 'btn-danger'}`} onClick={toggleVideo}>
           {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
         </button>
-        <button className="btn btn-primary" onClick={handleNext} style={{ background: 'linear-gradient(135deg, #FFB75E 0%, #ED8F03 100%)' }}>
+        <button className="btn btn-primary" onClick={onClickNext} style={{ background: 'linear-gradient(135deg, #FFB75E 0%, #ED8F03 100%)' }}>
           <SkipForward size={20} /> Next
         </button>
       </div>
