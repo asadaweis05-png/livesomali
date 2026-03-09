@@ -1,9 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Peer from 'simple-peer';
 import { Video, VideoOff, Mic, MicOff, MessageCircle, Gamepad2, SkipForward, Info } from 'lucide-react';
 import './App.css';
 import TicTacToe from './components/TicTacToe';
 import { supabase } from './supabase';
+
+// Standard STUN servers for NAT traversal
+const ICE_SERVERS = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+  ]
+};
 
 function App() {
   const [stream, setStream] = useState(null);
@@ -18,17 +28,16 @@ function App() {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [statusText, setStatusText] = useState('Initializing...');
 
-  // Unique session ID for this tab
   const [myId] = useState(Math.random().toString(36).substring(7));
 
-  const myVideo = useRef();
-  const remoteVideo = useRef();
-  const connectionRef = useRef();
-  const channelRef = useRef();
+  const myVideo = useRef(null);
+  const remoteVideo = useRef(null);
+  const peerConnectionRef = useRef(null);
+  const channelRef = useRef(null);
   const isMatchedRef = useRef(false);
   const isRequestingRef = useRef(false);
 
-  // 1. Initialize Media Stream
+  // 1. Initialize Local Media
   useEffect(() => {
     setStatusText('Allow Camera/Mic access...');
     navigator.mediaDevices.getUserMedia({
@@ -42,17 +51,18 @@ function App() {
       })
       .catch(err => {
         console.error("Camera error:", err);
-        setStatusText('Error: Please enable camera/mic.');
+        setStatusText('Error: Please allow camera/mic access.');
       });
   }, []);
 
-  // 2. Setup Persistent Supabase Channel
+  // 2. Setup Native WebRTC & Supabase Signaling
   useEffect(() => {
     if (!stream) return;
 
     const channel = supabase.channel('lobby', {
       config: { presence: { key: myId } }
     });
+    channelRef.current = channel;
 
     const attemptMatch = (state) => {
       if (isMatchedRef.current || isRequestingRef.current) return;
@@ -86,114 +96,138 @@ function App() {
     channel
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
-        console.log('Presence update:', state);
         attemptMatch(state);
       })
-      .on('broadcast', { event: 'match_request' }, ({ payload }) => {
+      // Matchmaking Handshake
+      .on('broadcast', { event: 'match_request' }, async ({ payload }) => {
         if (payload.to === myId && !isMatchedRef.current) {
-          console.log('Received match request from', payload.from);
           isMatchedRef.current = true;
           channel.send({
             type: 'broadcast',
             event: 'match_accept',
             payload: { from: myId, to: payload.from }
           });
-          startWebRTC(payload.from, false);
+          // I received request -> I am NOT initiator
+          await setupPeerConnection(payload.from, false);
         }
       })
-      .on('broadcast', { event: 'match_accept' }, ({ payload }) => {
+      .on('broadcast', { event: 'match_accept' }, async ({ payload }) => {
         if (payload.to === myId && isRequestingRef.current && !isMatchedRef.current) {
-          console.log('Match accepted by', payload.from);
           isMatchedRef.current = true;
-          startWebRTC(payload.from, true);
+          // I sent request and it was accepted -> I AM initiator
+          await setupPeerConnection(payload.from, true);
         }
       })
-      .on('broadcast', { event: 'signal' }, ({ payload }) => {
-        if (payload.to === myId && connectionRef.current) {
-          console.log('Signal received from', payload.from);
-          connectionRef.current.signal(payload.signal);
+      // WebRTC Signaling
+      .on('broadcast', { event: 'webrtc_offer' }, async ({ payload }) => {
+        if (payload.to === myId && peerConnectionRef.current) {
+          console.log("Received Offer");
+          try {
+            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.offer));
+            const answer = await peerConnectionRef.current.createAnswer();
+            await peerConnectionRef.current.setLocalDescription(answer);
+            channel.send({
+              type: 'broadcast',
+              event: 'webrtc_answer',
+              payload: { from: myId, to: payload.from, answer }
+            });
+          } catch (err) { console.error("Error handling offer:", err); }
         }
       })
+      .on('broadcast', { event: 'webrtc_answer' }, async ({ payload }) => {
+        if (payload.to === myId && peerConnectionRef.current) {
+          console.log("Received Answer");
+          try {
+            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer));
+          } catch (err) { console.error("Error handling answer:", err); }
+        }
+      })
+      .on('broadcast', { event: 'webrtc_ice' }, async ({ payload }) => {
+        if (payload.to === myId && peerConnectionRef.current) {
+          try {
+            if (payload.candidate) {
+              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
+            }
+          } catch (err) { console.error("Error adding ICE candidate:", err); }
+        }
+      })
+      // Chat & Game Events
       .on('broadcast', { event: 'chat' }, ({ payload }) => {
-        if (payload.to === myId) {
-          setMessages((prev) => [...prev, { text: payload.message, sent: false }]);
-        }
+        if (payload.to === myId) setMessages((prev) => [...prev, { text: payload.message, sent: false }]);
       })
       .on('broadcast', { event: 'game' }, ({ payload }) => {
-        if (payload.to === myId && payload.type === 'start_game') {
-          setIsGaming(true);
-        }
+        if (payload.to === myId && payload.type === 'start_game') setIsGaming(true);
       })
       .on('broadcast', { event: 'disconnect' }, ({ payload }) => {
-        if (payload.to === myId) {
-          console.log('Peer left match');
-          handleNext();
-        }
+        if (payload.to === myId) handleNext();
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          console.log('Successfully subscribed to Supabase lobby');
           await channel.track({ isReady: true, partnerId: null, joinedAt: Date.now() });
         }
       });
 
-    channelRef.current = channel;
-
-    return () => {
-      channel.unsubscribe();
-    };
+    return () => { channel.unsubscribe(); };
   }, [stream]);
 
-  const startWebRTC = (partnerId, initiator) => {
-    if (isMatchedRef.current && initiator) return; // Already matched
-
-    console.log(`Setting up Peer. Initiator: ${initiator}, Target: ${partnerId}`);
-    isMatchedRef.current = true;
+  const setupPeerConnection = async (partnerId, isInit) => {
+    console.log(`Setting up Native WebRTC. Initiator: ${isInit}`);
     setIsMatched(true);
     setPeerId(partnerId);
-    setIsInitiator(initiator);
+    setIsInitiator(isInit);
     setStatusText('Found match! Connecting...');
 
-    // Mark ourselves as BUSY immediately
+    // Update presence
     channelRef.current.track({ isReady: true, partnerId, joinedAt: Date.now() });
 
-    const peer = new Peer({
-      initiator,
-      trickle: false,
-      stream,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' },
-        ]
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    peerConnectionRef.current = pc;
+
+    // Add local tracks
+    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+    // Handle remote tracks
+    pc.ontrack = (event) => {
+      console.log("Received remote track");
+      if (event.streams && event.streams[0]) {
+        setRemoteStream(event.streams[0]);
+        if (remoteVideo.current) remoteVideo.current.srcObject = event.streams[0];
+        setStatusText('Matched & Connected');
       }
-    });
+    };
 
-    peer.on('signal', (data) => {
-      console.log('Broadcasting signal to partner');
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'signal',
-        payload: { to: partnerId, from: myId, signal: data }
-      });
-    });
+    // Handle ICE candidates
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'webrtc_ice',
+          payload: { to: partnerId, from: myId, candidate: event.candidate }
+        });
+      }
+    };
 
-    peer.on('stream', (remoteStream) => {
-      console.log('Establishing live video...');
-      setRemoteStream(remoteStream);
-      if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
-      setStatusText('Matched & Connected');
-    });
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+        handleNext();
+      }
+    };
 
-    peer.on('error', (err) => {
-      console.warn('Connection failed, finding new match...', err);
-      handleNext();
-    });
-
-    connectionRef.current = peer;
+    // If initiator, create and send Offer
+    if (isInit) {
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'webrtc_offer',
+          payload: { to: partnerId, from: myId, offer }
+        });
+      } catch (err) {
+        console.error("Error creating offer:", err);
+        handleNext();
+      }
+    }
   };
 
   const handleNext = () => {
@@ -205,9 +239,9 @@ function App() {
       });
     }
 
-    if (connectionRef.current) {
-      connectionRef.current.destroy();
-      connectionRef.current = null;
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
     }
 
     isMatchedRef.current = false;
@@ -218,6 +252,8 @@ function App() {
     setPeerId(null);
     setMessages([]);
     setStatusText('Searching for peer...');
+
+    if (remoteVideo.current) remoteVideo.current.srcObject = null;
 
     if (channelRef.current) {
       channelRef.current.track({ isReady: true, partnerId: null, joinedAt: Date.now() });
