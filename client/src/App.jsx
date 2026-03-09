@@ -50,6 +50,7 @@ function App() {
   const isRequestingRef = useRef(false);
   const peerIdRef = useRef(null);
   const peerIceQueue = useRef([]);
+  const connectionTimeoutRef = useRef(null);
 
   // 1. Initialize Local Media
   useEffect(() => {
@@ -322,14 +323,15 @@ function App() {
 
     pc.oniceconnectionstatechange = () => {
       console.log("ICE State Changed:", pc.iceConnectionState);
-      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
-        console.log("ICE Connection disconnected/failed");
+      if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+        console.log("ICE Connection failed permanently");
         handleNext();
       }
     };
 
     // Strict WebRTC fallback timeout: If connection isn't established in 12 seconds, drop it
-    const connectionTimeout = setTimeout(() => {
+    if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
+    connectionTimeoutRef.current = setTimeout(() => {
       if (pc.connectionState !== 'connected' && pc.connectionState !== 'completed') {
         console.log("WebRTC Connection timed out. Dropping dead partner.");
         handleNext();
@@ -339,10 +341,10 @@ function App() {
     pc.onconnectionstatechange = () => {
       console.log("WebRTC State Changed:", pc.connectionState);
       if (pc.connectionState === 'connected' || pc.connectionState === 'completed') {
-        clearTimeout(connectionTimeout); // Successfully connected, cancel timeout
+        if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current); // Successfully connected, cancel timeout
       }
-      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        console.log("WebRTC Connection frozen or failed");
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        console.log("WebRTC Connection permanently failed");
         handleNext();
       }
     };
@@ -369,6 +371,11 @@ function App() {
     if (!isMatchedRef.current && !isRequestingRef.current) {
       if (channelRef.current) attemptMatch(channelRef.current.presenceState());
       return;
+    }
+
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
     }
 
     if (peerIdRef.current && channelRef.current) {
