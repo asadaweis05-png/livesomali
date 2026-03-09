@@ -4,7 +4,9 @@ import './App.css';
 import TicTacToe from './components/TicTacToe';
 import { supabase } from './supabase';
 
-// Working STUN & TURN servers
+// Reliable Google STUN servers for NAT traversal
+// NOTE: For cross-network mobile connections, add real TURN server credentials
+// Get free ones at: https://dashboard.metered.ca/signup?tool=turnserver
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -12,27 +14,8 @@ const ICE_SERVERS = {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    {
-      urls: 'turn:a.relay.metered.ca:80',
-      username: 'e8dd65b92f6aae6e0753b1e8',
-      credential: '5V960yrLjJBfYGkl',
-    },
-    {
-      urls: 'turn:a.relay.metered.ca:80?transport=tcp',
-      username: 'e8dd65b92f6aae6e0753b1e8',
-      credential: '5V960yrLjJBfYGkl',
-    },
-    {
-      urls: 'turn:a.relay.metered.ca:443',
-      username: 'e8dd65b92f6aae6e0753b1e8',
-      credential: '5V960yrLjJBfYGkl',
-    },
-    {
-      urls: 'turn:a.relay.metered.ca:443?transport=tcp',
-      username: 'e8dd65b92f6aae6e0753b1e8',
-      credential: '5V960yrLjJBfYGkl',
-    },
-  ]
+  ],
+  iceCandidatePoolSize: 10,
 };
 
 function App() {
