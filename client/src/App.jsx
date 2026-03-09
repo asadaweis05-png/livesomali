@@ -5,7 +5,12 @@ import { Video, VideoOff, Mic, MicOff, MessageCircle, Gamepad2, SkipForward } fr
 import './App.css';
 import TicTacToe from './components/TicTacToe';
 
-const socket = io('http://localhost:5000');
+// IMPORTANT: Replace this with your deployed backend URL (e.g., on Render or Railway)
+const BACKEND_URL = window.location.hostname === 'localhost'
+  ? 'http://localhost:5000'
+  : 'https://livesomali-backend.onrender.com'; // Example placeholder
+
+const socket = io(BACKEND_URL);
 
 function App() {
   const [stream, setStream] = useState(null);
@@ -23,9 +28,16 @@ function App() {
   const remoteVideo = useRef();
   const connectionRef = useRef();
 
-  // 1. Initialize Media Stream once
+  // 1. Initialize Media Stream once with HD Constraints
   useEffect(() => {
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        facingMode: "user"
+      },
+      audio: true
+    })
       .then((currentStream) => {
         setStream(currentStream);
         if (myVideo.current) {
@@ -48,7 +60,16 @@ function App() {
       const peer = new Peer({
         initiator: initiator,
         trickle: false,
-        stream: stream // Note: stream might be null if not loaded yet
+        stream: stream,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
+          ]
+        }
       });
 
       peer.on('signal', (data) => {
@@ -92,7 +113,7 @@ function App() {
       socket.off('game_action');
       socket.off('peer_disconnected');
     };
-  }, [stream]); // Re-run when stream becomes available to ensure Peer has it
+  }, [stream]);
 
   const handleNext = () => {
     if (connectionRef.current) {
