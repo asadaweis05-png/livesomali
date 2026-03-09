@@ -54,8 +54,9 @@ function App() {
   // 1. Initialize Local Media
   useEffect(() => {
     setStatusText('Allow Camera/Mic access...');
+    // Use highly compatible constraints to prevent black-screen hardware failures
     navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+      video: true,
       audio: true
     })
       .then((currentStream) => {
