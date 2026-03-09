@@ -208,12 +208,6 @@ function App() {
           try {
             await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.offer));
 
-            // Process queued ICE candidates
-            peerIceQueue.current.forEach(async candidate => {
-              try { await peerConnectionRef.current.addIceCandidate(candidate); } catch (err) { }
-            });
-            peerIceQueue.current = [];
-
             const answer = await peerConnectionRef.current.createAnswer();
             await peerConnectionRef.current.setLocalDescription(answer);
             channel.send({
@@ -221,6 +215,15 @@ function App() {
               event: 'webrtc_answer',
               payload: { from: myId, to: payload.from, answer }
             });
+
+            // Process queued ICE candidates AFTER description is set
+            setTimeout(() => {
+              peerIceQueue.current.forEach(async candidate => {
+                try { await peerConnectionRef.current.addIceCandidate(candidate); console.log("Added queued ICE offer"); } catch (err) { }
+              });
+              peerIceQueue.current = [];
+            }, 100);
+
           } catch (err) { console.error("Error handling offer:", err); }
         }
       })
@@ -230,11 +233,13 @@ function App() {
           try {
             await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer));
 
-            // Process queued ICE candidates
-            peerIceQueue.current.forEach(async candidate => {
-              try { await peerConnectionRef.current.addIceCandidate(candidate); } catch (err) { }
-            });
-            peerIceQueue.current = [];
+            // Process queued ICE candidates AFTER description is set
+            setTimeout(() => {
+              peerIceQueue.current.forEach(async candidate => {
+                try { await peerConnectionRef.current.addIceCandidate(candidate); console.log("Added queued ICE answer"); } catch (err) { }
+              });
+              peerIceQueue.current = [];
+            }, 100);
 
           } catch (err) { console.error("Error handling answer:", err); }
         }
@@ -244,9 +249,12 @@ function App() {
           try {
             if (payload.candidate) {
               const rtcCandidate = new RTCIceCandidate(payload.candidate);
+              console.log("Received remote ICE candidate");
               if (peerConnectionRef.current.remoteDescription && peerConnectionRef.current.remoteDescription.type) {
                 await peerConnectionRef.current.addIceCandidate(rtcCandidate);
+                console.log("Added remote ICE candidate");
               } else {
+                console.log("Queued remote ICE candidate (remoteDescription not set yet)");
                 peerIceQueue.current.push(rtcCandidate);
               }
             }
@@ -302,6 +310,7 @@ function App() {
     // Handle ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
+        console.log("Sending local ICE candidate");
         channelRef.current.send({
           type: 'broadcast',
           event: 'webrtc_ice',
@@ -311,6 +320,7 @@ function App() {
     };
 
     pc.oniceconnectionstatechange = () => {
+      console.log("ICE State Changed:", pc.iceConnectionState);
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
         console.log("ICE Connection disconnected/failed");
         handleNext();
@@ -326,6 +336,7 @@ function App() {
     }, 12000);
 
     pc.onconnectionstatechange = () => {
+      console.log("WebRTC State Changed:", pc.connectionState);
       if (pc.connectionState === 'connected' || pc.connectionState === 'completed') {
         clearTimeout(connectionTimeout); // Successfully connected, cancel timeout
       }
