@@ -10,10 +10,8 @@ const TicTacToe = ({ channel, peerId, isInitiator, onDispose }) => {
     const peerSymbol = isInitiator ? 'O' : 'X';
 
     useEffect(() => {
-        const sub = channel.on('broadcast', { event: 'game_move' }, ({ payload }) => {
-            if (payload.to === 'all' || payload.to === channel.presenceState()[Object.keys(channel.presenceState())[0]][0].presence_ref) {
-                // Simplify for now: if message is received and it's move type
-            }
+        // Listen for moves from the peer
+        const listener = channel.on('broadcast', { event: 'game_move' }, ({ payload }) => {
             if (payload.type === 'move') {
                 const newBoard = [...board];
                 newBoard[payload.index] = peerSymbol;
@@ -23,8 +21,11 @@ const TicTacToe = ({ channel, peerId, isInitiator, onDispose }) => {
             }
         });
 
-        return () => { }; // Supabase handles cleanup via App.jsx channel ref
-    }, [board]);
+        return () => {
+            // Supabase manages the channel, but individual listeners can stay until channel cleanup 
+            // or we can remove the listener explicitly if we had the ability to unbind a single event.
+        };
+    }, [board, peerSymbol]);
 
     const checkWinner = (squares) => {
         const lines = [

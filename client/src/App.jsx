@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Peer from 'simple-peer';
-import { Video, VideoOff, Mic, MicOff, MessageCircle, Gamepad2, SkipForward } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, MessageCircle, Gamepad2, SkipForward, Info } from 'lucide-react';
 import './App.css';
 import TicTacToe from './components/TicTacToe';
 import { supabase } from './supabase';
@@ -16,6 +16,9 @@ function App() {
   const [isInitiator, setIsInitiator] = useState(false);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(true);
+  const [statusText, setStatusText] = useState('Initializing...');
+
+  // Stats for debugging
   const [myId] = useState(Math.random().toString(36).substring(7));
 
   const myVideo = useRef();
@@ -23,20 +26,32 @@ function App() {
   const connectionRef = useRef();
   const channelRef = useRef();
 
+  // Keep track of match state in a ref to avoid stale closure issues in callbacks
+  const isMatchedRef = useRef(false);
+
   // 1. Initialize Media Stream
   useEffect(() => {
+    setStatusText('Requesting camera/mic...');
     navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        facingMode: "user"
+      },
       audio: true
     })
       .then((currentStream) => {
         setStream(currentStream);
         if (myVideo.current) myVideo.current.srcObject = currentStream;
+        setStatusText('Finding match...');
       })
-      .catch(err => console.error("Error accessing media devices:", err));
+      .catch(err => {
+        console.error("Error accessing media devices:", err);
+        setStatusText('Error: Camera/Mic access denied.');
+      });
   }, []);
 
-  // 2. Setup Supabase Realtime for Matchmaking and Signaling
+  // 2. Persistent Supabase Channel
   useEffect(() => {
     if (!stream) return;
 
@@ -47,14 +62,20 @@ function App() {
     channel
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
-        console.log('Presence state:', state);
+        console.log('Presence update:', state);
 
-        // Matchmaking logic: If we are not matched, find someone else who isn't matched
-        if (!isMatched) {
-          const availableUsers = Object.keys(state).filter(id => id !== myId);
-          if (availableUsers.length > 0) {
-            const partnerId = availableUsers[0];
-            // To avoid race conditions, the user with "lower" ID initiates
+        if (!isMatchedRef.current) {
+          // Find potential partners who are ALSO not matched
+          // Note: In a production app, you'd store "isSearching" in presence metadata
+          const availablePartners = Object.keys(state).filter(id => {
+            const presence = state[id][0];
+            return id !== myId && !presence.partnerId;
+          });
+
+          if (availablePartners.length > 0) {
+            // Sort to ensure both sides pick the same partner
+            availablePartners.sort();
+            const partnerId = availablePartners[0];
             const initiator = myId < partnerId;
             startWebRTC(partnerId, initiator);
           }
@@ -62,6 +83,7 @@ function App() {
       })
       .on('broadcast', { event: 'signal' }, ({ payload }) => {
         if (payload.to === myId && connectionRef.current) {
+          console.log('Received signal from', payload.from);
           connectionRef.current.signal(payload.signal);
         }
       })
@@ -75,9 +97,16 @@ function App() {
           setIsGaming(true);
         }
       })
+      .on('broadcast', { event: 'disconnect' }, ({ payload }) => {
+        if (payload.to === myId) {
+          console.log('Peer disconnected via broadcast');
+          handleNext();
+        }
+      })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          await channel.track({ online_at: new Date().toISOString() });
+          console.log('Subscribed to lobby');
+          await channel.track({ online_at: new Date().toISOString(), partnerId: null });
         }
       });
 
@@ -86,13 +115,20 @@ function App() {
     return () => {
       channel.unsubscribe();
     };
-  }, [stream, isMatched]);
+  }, [stream]); // NO isMatched in dependency array!
 
   const startWebRTC = (partnerId, initiator) => {
-    console.log(`Starting WebRTC with ${partnerId}, initiator: ${initiator}`);
+    if (isMatchedRef.current) return;
+
+    console.log(`Attempting match with ${partnerId}, initiator: ${initiator}`);
+    isMatchedRef.current = true;
     setIsMatched(true);
     setPeerId(partnerId);
     setIsInitiator(initiator);
+    setStatusText('Connecting to peer...');
+
+    // Update presence to show we are busy
+    channelRef.current.track({ online_at: new Date().toISOString(), partnerId });
 
     const peer = new Peer({
       initiator,
@@ -101,37 +137,70 @@ function App() {
       config: {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' },
         ]
       }
     });
 
     peer.on('signal', (data) => {
+      console.log('Sending signal to', partnerId);
       channelRef.current.send({
         type: 'broadcast',
         event: 'signal',
-        payload: { to: partnerId, signal: data }
+        payload: { to: partnerId, from: myId, signal: data }
       });
     });
 
     peer.on('stream', (remoteStream) => {
+      console.log('Received remote stream');
       setRemoteStream(remoteStream);
       if (remoteVideo.current) remoteVideo.current.srcObject = remoteStream;
+      setStatusText('Connected');
+    });
+
+    peer.on('error', (err) => {
+      console.error('WebRTC Peer Error:', err);
+      handleNext();
+    });
+
+    peer.on('close', () => {
+      console.log('Peer connection closed');
+      handleNext();
     });
 
     connectionRef.current = peer;
   };
 
   const handleNext = () => {
+    // Tell partner we are leaving
+    if (peerId && channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'disconnect',
+        payload: { to: peerId }
+      });
+    }
+
     if (connectionRef.current) {
       connectionRef.current.destroy();
       connectionRef.current = null;
     }
-    setRemoteStream(null);
+
+    isMatchedRef.current = false;
     setIsMatched(false);
+    setRemoteStream(null);
     setIsGaming(false);
     setPeerId(null);
     setMessages([]);
+    setStatusText('Finding match...');
+
+    // Reset presence to available
+    if (channelRef.current) {
+      channelRef.current.track({ online_at: new Date().toISOString(), partnerId: null });
+    }
   };
 
   const sendMessage = (e) => {
@@ -181,16 +250,16 @@ function App() {
   return (
     <div className="app">
       <div className="status-badge">
-        <div className="pulse"></div>
-        {isMatched ? 'Connected' : 'Finding match...'}
+        <div className={isMatched ? '' : 'pulse'}></div>
+        {statusText}
       </div>
 
       <div className="video-container">
         <div className="video-wrapper glass">
           <video playsInline muted ref={myVideo} autoPlay />
-          <div style={{ position: 'absolute', bottom: 10, left: 10, color: '#fff', fontSize: '0.8rem' }}>You</div>
+          <div className="video-label">You</div>
           {!videoEnabled && (
-            <div style={{ position: 'absolute', inset: 0, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="video-off-overlay">
               <VideoOff size={48} color="rgba(255,255,255,0.1)" />
             </div>
           )}
@@ -199,16 +268,22 @@ function App() {
           {remoteStream ? (
             <video playsInline ref={remoteVideo} autoPlay />
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'rgba(255,255,255,0.3)' }}>
-              {isMatched ? 'Connecting...' : 'Waiting for peer...'}
+            <div className="video-placeholder">
+              {isMatched ? 'Establishing Secure Connection...' : 'Searching for strangers...'}
             </div>
           )}
-          <div style={{ position: 'absolute', bottom: 10, left: 10, color: '#fff', fontSize: '0.8rem' }}>Stranger</div>
+          <div className="video-label">Stranger</div>
         </div>
       </div>
 
       <div className="chat-panel glass">
         <div className="chat-messages">
+          {messages.length === 0 && !isMatched && (
+            <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}>
+              <Info size={24} style={{ marginBottom: '8px' }} />
+              <p>Welcome! Once matched, you can chat here.</p>
+            </div>
+          )}
           {messages.map((msg, i) => (
             <div key={i} className={`message ${msg.sent ? 'sent' : 'received'}`}>
               {msg.text}
@@ -218,11 +293,12 @@ function App() {
         <form className="chat-input" onSubmit={sendMessage}>
           <input
             type="text"
-            placeholder="Type a message..."
+            placeholder={isMatched ? "Type a message..." : "Waiting for match..."}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
+            disabled={!isMatched}
           />
-          <button type="submit" className="btn btn-primary" style={{ padding: '8px' }}>
+          <button type="submit" className="btn btn-primary" style={{ padding: '8px' }} disabled={!isMatched}>
             <MessageCircle size={18} />
           </button>
         </form>
@@ -230,7 +306,7 @@ function App() {
 
       <div className="game-panel glass">
         <h4 style={{ margin: '0 0 10px 0', fontSize: '0.9rem' }}>Live Games</h4>
-        <button className="btn btn-primary" style={{ width: '100%', fontSize: '0.8rem', padding: '8px' }} onClick={isMatched ? startGame : undefined}>
+        <button className="btn btn-primary" style={{ width: '100%', fontSize: '0.8rem', padding: '8px' }} onClick={isMatched ? startGame : undefined} disabled={!isMatched}>
           <Gamepad2 size={16} /> Tic Tac Toe
         </button>
       </div>
