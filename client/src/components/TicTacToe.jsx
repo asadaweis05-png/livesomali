@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 
-const TicTacToe = ({ channel, peerId, isInitiator, onDispose }) => {
+const TicTacToe = ({ socket, peerId, isInitiator, onDispose }) => {
     const [board, setBoard] = useState(Array(9).fill(null));
     const [isMyTurn, setIsMyTurn] = useState(isInitiator);
     const [winner, setWinner] = useState(null);
@@ -10,22 +10,27 @@ const TicTacToe = ({ channel, peerId, isInitiator, onDispose }) => {
     const peerSymbol = isInitiator ? 'O' : 'X';
 
     useEffect(() => {
-        // Listen for moves from the peer
-        const listener = channel.on('broadcast', { event: 'game_move' }, ({ payload }) => {
-            if (payload.type === 'move') {
-                const newBoard = [...board];
-                newBoard[payload.index] = peerSymbol;
-                setBoard(newBoard);
-                setIsMyTurn(true);
-                checkWinner(newBoard);
-            }
-        });
+        if (!socket) return;
 
-        return () => {
-            // Supabase manages the channel, but individual listeners can stay until channel cleanup 
-            // or we can remove the listener explicitly if we had the ability to unbind a single event.
+        const handleAction = ({ type, index }) => {
+            if (type === 'move') {
+                setBoard(prev => {
+                    const newBoard = [...prev];
+                    newBoard[index] = peerSymbol;
+                    checkWinner(newBoard);
+                    return newBoard;
+                });
+                setIsMyTurn(true);
+            } else if (type === 'rematch') {
+                setBoard(Array(9).fill(null));
+                setWinner(null);
+                setIsMyTurn(isInitiator);
+            }
         };
-    }, [board, peerSymbol]);
+
+        socket.on('game_action', handleAction);
+        return () => socket.off('game_action', handleAction);
+    }, [socket, peerSymbol, isInitiator]);
 
     const checkWinner = (squares) => {
         const lines = [
@@ -52,25 +57,28 @@ const TicTacToe = ({ channel, peerId, isInitiator, onDispose }) => {
         setIsMyTurn(false);
         checkWinner(newBoard);
 
-        channel.send({
-            type: 'broadcast',
-            event: 'game_move',
-            payload: { to: peerId, type: 'move', index }
-        });
+        socket.emit('game_action', { type: 'move', index });
+    };
+
+    const requestRematch = () => {
+        setBoard(Array(9).fill(null));
+        setWinner(null);
+        setIsMyTurn(isInitiator);
+        socket.emit('game_action', { type: 'rematch' });
     };
 
     return (
         <div className="game-overlay glass">
             <button className="close-btn" onClick={onDispose}><X size={18} /></button>
-            <h3 style={{ margin: '0 0 10px 0' }}>Tic Tac Toe</h3>
-            <p style={{ fontSize: '0.8rem', opacity: 0.7 }}>
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '1rem' }}>Tic Tac Toe</h3>
+            <p style={{ fontSize: '0.8rem', opacity: 0.7, marginBottom: '15px' }}>
                 {winner ? (winner === 'Draw' ? "It's a Draw!" : `${winner} Wins!`) : (isMyTurn ? "Your Turn" : "Peer's Turn")}
             </p>
             <div className="ttt-board">
                 {board.map((cell, i) => (
                     <div
                         key={i}
-                        className={`ttt-cell ${!isMyTurn || cell ? 'disabled' : ''}`}
+                        className={`ttt-cell ${!isMyTurn || cell || winner ? 'disabled' : ''}`}
                         onClick={() => handleClick(i)}
                     >
                         {cell}
@@ -80,12 +88,8 @@ const TicTacToe = ({ channel, peerId, isInitiator, onDispose }) => {
             {winner && (
                 <button
                     className="btn btn-primary"
-                    style={{ marginTop: '20px', width: '100%' }}
-                    onClick={() => {
-                        setBoard(Array(9).fill(null));
-                        setWinner(null);
-                        setIsMyTurn(isInitiator);
-                    }}
+                    style={{ marginTop: '20px', width: '100%', padding: '10px' }}
+                    onClick={requestRematch}
                 >
                     Rematch
                 </button>
