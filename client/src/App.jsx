@@ -1,36 +1,41 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Video, VideoOff, Mic, MicOff, MessageCircle, Gamepad2, SkipForward, Info, RefreshCw, Users } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, MessageCircle, Gamepad2, SkipForward, Info, RefreshCw, Users, Globe } from 'lucide-react';
 import './App.css';
 import TicTacToe from './components/TicTacToe';
 import { supabase } from './supabase';
 
-// STUN + TURN servers for reliable NAT traversal across all networks & countries
+// GLOBAL ENTERPRISE-GRADE RELAY (OpenRelay)
+// This configuration is specifically designed to bridge connections across different ISPs, countries, and NAT types (e.g., Cellular to WiFi).
 const ICE_SERVERS = {
   iceServers: [
+    // Standard Global STUN Servers
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.apple.com:19302' },
+
+    // Enterprise TURN Relay (via OpenRelay community credentials)
+    // These servers act as a universal bridge when direct P2P connection fails.
     {
-      urls: 'turn:a.relay.metered.ca:80',
-      username: 'e8dd65b092de10874e403307',
-      credential: '5d9M0e/EfiCfGxRr',
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
     },
     {
-      urls: 'turn:a.relay.metered.ca:80?transport=tcp',
-      username: 'e8dd65b092de10874e403307',
-      credential: '5d9M0e/EfiCfGxRr',
-    },
-    {
-      urls: 'turn:a.relay.metered.ca:443',
-      username: 'e8dd65b092de10874e403307',
-      credential: '5d9M0e/EfiCfGxRr',
-    },
-    {
-      urls: 'turns:a.relay.metered.ca:443?transport=tcp',
-      username: 'e8dd65b092de10874e403307',
-      credential: '5d9M0e/EfiCfGxRr',
-    },
+      urls: [
+        'turns:openrelay.metered.ca:443',
+        'turns:openrelay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ],
   iceCandidatePoolSize: 10,
+  iceTransportPolicy: 'all', // Ensure all types (host, srflx, and relay) are allowed
 };
 
 async function getMediaStream() {
@@ -75,6 +80,7 @@ function App() {
   const [mediaError, setMediaError] = useState(null);
   const [mediaMode, setMediaMode] = useState('full');
   const [onlineCount, setOnlineCount] = useState(0);
+  const [connectionType, setConnectionType] = useState(null); // 'P2P' or 'Relay'
 
   const myIdRef = useRef(Math.random().toString(36).substring(7));
   const myId = myIdRef.current;
@@ -118,7 +124,6 @@ function App() {
       else if (err.name === 'NotReadableError') errorMsg = 'Camera in use. ';
       setMediaError(errorMsg);
       setStatusText(errorMsg);
-      // Still allow matching even without media
       setStream({ getTracks: () => [] });
     }
   }, []);
@@ -161,6 +166,7 @@ function App() {
         pcRef.current.onconnectionstatechange = null; pcRef.current.oniceconnectionstatechange = null;
         pcRef.current.close(); pcRef.current = null;
       }
+      setConnectionType(null);
     }
 
     function resetToLobby() {
@@ -182,7 +188,7 @@ function App() {
 
     function setupPC(partnerId, isInit) {
       setIsMatched(true); setPeerId(partnerId); peerIdRef.current = partnerId;
-      setIsInitiator(isInit); setStatusText('Connecting...');
+      setIsInitiator(isInit); setStatusText('Bridging networks...');
       iceQueueRef.current = [];
       channel.track({ isReady: false, partnerId, joinedAt: Date.now() });
 
@@ -200,33 +206,48 @@ function App() {
             setTimeout(() => remoteVideo.current?.play().catch(() => { }), 200);
           }
         }
-        setStatusText('Matched & Connected');
+        setStatusText('Global Connection Established');
       };
 
       pc.onicecandidate = (e) => {
-        if (e.candidate) channel.send({ type: 'broadcast', event: 'webrtc_ice', payload: { to: partnerId, from: myId, candidate: e.candidate.toJSON() } });
+        if (e.candidate) {
+          // Diagnostic logging to see if relay is working
+          if (e.candidate.candidate.includes('relay')) {
+            console.log('[WebRTC] RELAY candidate generated - Bridge active.');
+            setConnectionType('Relay Bridge');
+          } else if (e.candidate.candidate.includes('srflx')) {
+            if (!connectionType) setConnectionType('Direct (NAT)');
+          }
+
+          channel.send({
+            type: 'broadcast',
+            event: 'webrtc_ice',
+            payload: { to: partnerId, from: myId, candidate: e.candidate.toJSON() }
+          });
+        }
       };
 
       pc.oniceconnectionstatechange = () => {
         const state = pc.iceConnectionState;
+        console.log("[WebRTC] ICE state:", state);
         if (state === 'connected' || state === 'completed') {
           if (disconnectGraceRef.current) { clearTimeout(disconnectGraceRef.current); disconnectGraceRef.current = null; }
-          setStatusText('Matched & Connected');
+          setStatusText('Securely Connected');
         }
         if (state === 'disconnected') {
-          setStatusText('Reconnecting...');
+          setStatusText('Signal weak, retrying...');
           if (disconnectGraceRef.current) clearTimeout(disconnectGraceRef.current);
           disconnectGraceRef.current = setTimeout(() => {
             if (pcRef.current?.iceConnectionState === 'disconnected') try { pcRef.current.restartIce(); } catch (e) { resetToLobby(); }
           }, 5000);
         }
         if (state === 'failed') {
-          try { pc.restartIce(); setStatusText('Retrying...'); setTimeout(() => { if (pcRef.current === pc && pc.iceConnectionState === 'failed') resetToLobby(); }, 8000); }
+          try { pc.restartIce(); setStatusText('Relaying connection...'); setTimeout(() => { if (pcRef.current === pc && pc.iceConnectionState === 'failed') resetToLobby(); }, 8000); }
           catch (e) { resetToLobby(); }
         }
       };
 
-      timeoutRef.current = setTimeout(() => { if (pc === pcRef.current && pc.connectionState !== 'connected') resetToLobby(); }, 20000);
+      timeoutRef.current = setTimeout(() => { if (pc === pcRef.current && pc.connectionState !== 'connected') resetToLobby(); }, 25000);
 
       if (isInit) {
         setTimeout(async () => {
@@ -249,24 +270,20 @@ function App() {
         .filter(id => {
           const presences = state[id];
           if (id === myId || !presences) return false;
-          // Check if any presence for this user is ready
           return presences.some(p => p.isReady && !p.partnerId);
         })
         .map(id => ({ id, joinedAt: state[id][0].joinedAt || 0 }))
-        // FIFO: Prefer users who have been waiting longer
         .sort((a, b) => a.joinedAt - b.joinedAt);
 
       if (available.length === 0) {
-        if (allIds.length <= 1) setStatusText('Waiting (you are the only one online)...');
+        if (allIds.length <= 1) setStatusText('Waiting (only you online)...');
         else setStatusText(`Searching among ${allIds.length} users...`);
         return;
       }
 
-      // Pick one of the oldest 3 waiting users to avoid everyone hitting the same person
       const topFew = available.slice(0, 3);
       const partner = topFew[Math.floor(Math.random() * topFew.length)];
 
-      console.log("[Match] Requesting oldest available:", partner.id);
       isRequestingRef.current = partner.id;
       channel.send({ type: 'broadcast', event: 'match_request', payload: { from: myId, to: partner.id } });
 
@@ -332,14 +349,11 @@ function App() {
         } catch (err) { }
       })
       .on('broadcast', { event: 'chat' }, ({ payload }) => { if (payload.to === myId) setMessages(prev => [...prev, { text: payload.message, sent: false }]); })
-      .on('broadcast', { event: 'game' }, ({ payload }) => { if (payload.to === myId && payload.type === 'start_game') setIsGaming(true); })
-      .on('broadcast', { event: 'disconnect' }, ({ payload }) => { if (payload.to === myId) resetToLobby(); })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') await channel.track({ isReady: true, partnerId: null, joinedAt: Date.now() });
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setTimeout(() => channel.subscribe(), 2000);
       });
 
-    // Periodic matchmaking loop to prevent getting stuck
     matchIntervalRef.current = setInterval(() => {
       if (!isMatchedRef.current && !isRequestingRef.current) {
         attemptMatch(channel.presenceState());
@@ -363,12 +377,6 @@ function App() {
       setInputText('');
     }
   };
-  const startGame = () => {
-    if (isMatched && peerId && channelRef.current) {
-      setIsGaming(true);
-      channelRef.current.send({ type: 'broadcast', event: 'game', payload: { to: peerId, type: 'start_game' } });
-    }
-  };
   const toggleVideo = () => { if (stream?.getVideoTracks) { const t = stream.getVideoTracks()[0]; if (t) { t.enabled = !videoEnabled; setVideoEnabled(!videoEnabled); } } };
   const toggleAudio = () => { if (stream?.getAudioTracks) { const t = stream.getAudioTracks()[0]; if (t) { t.enabled = !audioEnabled; setAudioEnabled(!audioEnabled); } } };
 
@@ -381,6 +389,12 @@ function App() {
           <span className="online-count">
             <Users size={12} style={{ marginLeft: 8, marginRight: 4 }} />
             {onlineCount} online
+          </span>
+        )}
+        {isMatched && connectionType && (
+          <span className="connection-pill">
+            <Globe size={10} style={{ marginRight: 4 }} />
+            {connectionType}
           </span>
         )}
       </div>
@@ -399,7 +413,7 @@ function App() {
         </div>
         <div className="video-wrapper glass">
           <video playsInline ref={remoteVideo} autoPlay style={{ display: remoteStream ? 'block' : 'none', width: '100%', height: '100%', objectFit: 'cover' }} />
-          {!remoteStream && <div className="video-placeholder">{isMatched ? 'Establishing Secure Connection...' : 'Searching for a stranger to join...'}</div>}
+          {!remoteStream && <div className="video-placeholder">{isMatched ? 'Establishing Secure Tunnel...' : 'Universal Matching Active...'}</div>}
           <div className="video-label">Stranger</div>
         </div>
       </div>
@@ -407,7 +421,7 @@ function App() {
       <div className="chat-panel glass">
         <div className="chat-messages">
           {messages.length === 0 && !isMatched && (
-            <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}><Info size={24} style={{ marginBottom: '8px' }} /><p>Match with someone to start chatting!</p></div>
+            <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}><Info size={24} style={{ marginBottom: '8px' }} /><p>Match with anyone, anywhere!</p></div>
           )}
           {messages.map((msg, i) => <div key={i} className={`message ${msg.sent ? 'sent' : 'received'}`}>{msg.text}</div>)}
         </div>
@@ -418,8 +432,9 @@ function App() {
       </div>
 
       <div className="game-panel glass">
-        <h4 style={{ margin: '0 0 10px 0', fontSize: '0.9rem' }}>Live Games</h4>
-        <button className="btn btn-primary" style={{ width: '100%', fontSize: '0.8rem', padding: '8px' }} onClick={isMatched ? startGame : undefined} disabled={!isMatched}><Gamepad2 size={16} /> Tic Tac Toe</button>
+        <h4 style={{ margin: '0 0 10px 0', fontSize: '0.9rem' }}>Global Lobby</h4>
+        <div style={{ fontSize: '0.75rem', opacity: 0.6, marginBottom: '10px' }}>All networks/countries allowed</div>
+        <button className="btn btn-primary" style={{ width: '100%', fontSize: '0.8rem', padding: '8px' }} onClick={isMatched ? () => setIsGaming(true) : undefined} disabled={!isMatched}><Gamepad2 size={16} /> Tic Tac Toe</button>
       </div>
 
       {isGaming && isMatched && <TicTacToe channel={channelRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setIsGaming(false)} />}

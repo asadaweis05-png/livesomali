@@ -239,6 +239,22 @@ body {
   z-index: 10;
 }
 
+.online-count,
+.connection-pill {
+  display: flex;
+  align-items: center;
+  padding-left: 8px;
+  margin-left: 8px;
+  border-left: 1px solid rgba(0, 210, 255, 0.3);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.connection-pill {
+  color: #fbbf24;
+  border-left-color: rgba(251, 191, 36, 0.3);
+}
+
 @media (max-width: 768px) {
   .status-badge {
     top: 10px;
