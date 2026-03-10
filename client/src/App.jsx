@@ -187,7 +187,7 @@ function App() {
     const socket = io(SOCKET_URL, {
       reconnectionAttempts: 20,
       reconnectionDelay: 1000,
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'], // Try polling first for better initial connectivity
       timeout: 20000
     });
     socketRef.current = socket;
