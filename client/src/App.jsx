@@ -187,12 +187,19 @@ function App() {
     const socket = io(SOCKET_URL, {
       reconnectionAttempts: 10,
       reconnectionDelay: 2000,
+      transports: ['polling', 'websocket'], // Ensure compatibility with all proxies
+      timeout: 20000
     });
     socketRef.current = socket;
 
     socket.on('connect', () => {
       console.log('Connected to signaling server');
       if (streamRef.current) findMatch();
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('Socket Connection Error:', err.message);
+      setStatusText(`Server unreachable: ${err.message}`);
     });
 
     socket.on('match_found', ({ peerId, initiator }) => {
