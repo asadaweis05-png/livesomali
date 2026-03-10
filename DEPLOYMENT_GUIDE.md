@@ -3,10 +3,13 @@
 Your architecture has been upgraded to a dedicated **Socket.io** signaling server for maximum global reliability.
 
 ## 1. Signaling Server Deployment
-Deploy the contents of the `server/` folder to a service that supports persistent WebSockets (e.g., **Railway**, **Render**, **DigitalOcean**, or your own **Node.js VPS**).
+Deploy the entire repository to **Railway**.
 
-- **Folder**: `server/`
-- **Build Command**: `npm install`
+### 🛠️ Fix for "Railpack Could Not Determine Build" Error:
+I have added a `package.json` and `Procfile` to the **root** of your project. This tells Railway exactly how to find and start your server.
+
+- **Option A (Automatic)**: Just deploy the repo. Railway should now see the root `package.json` and start automatically.
+- **Option B (Recommended)**: In your Railway Service Settings, set the **Root Directory** to `/server`. This is the cleanest way to deploy just the backend.
 - **Start Command**: `npm start` (Runs `node server.js`)
 - **Port**: The server uses `process.env.PORT` or defaults to `5000`.
 
