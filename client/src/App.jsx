@@ -33,7 +33,7 @@ const ICE_SERVERS = {
 };
 
 // Replace with your actual deployed server URL
-const SOCKET_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://your-socket-server.com';
+const SOCKET_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://livesomali.vercel.app';
 
 function mungeSdp(sdp) {
   let lines = sdp.split('\r\n');
