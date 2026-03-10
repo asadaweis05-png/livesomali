@@ -14,8 +14,9 @@ app.get('/', (req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*', // Allows connections from Vercel and local dev
-    methods: ['GET', 'POST']
+    origin: ["https://livesomali.vercel.app", "http://localhost:5173", "http://localhost:3000"],
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 

@@ -185,9 +185,9 @@ function App() {
   // Socket.io Setup
   useEffect(() => {
     const socket = io(SOCKET_URL, {
-      reconnectionAttempts: 10,
-      reconnectionDelay: 2000,
-      transports: ['polling', 'websocket'], // Ensure compatibility with all proxies
+      reconnectionAttempts: 20,
+      reconnectionDelay: 1000,
+      transports: ['websocket', 'polling'], // Try websocket first for stability
       timeout: 20000
     });
     socketRef.current = socket;
