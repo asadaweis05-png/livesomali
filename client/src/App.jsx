@@ -198,8 +198,10 @@ function App() {
     });
 
     socket.on('connect_error', (err) => {
-      console.error('Socket Connection Error:', err.message);
-      setStatusText(`Server unreachable: ${err.message}`);
+      console.error('Socket Connection Error:', err);
+      // Check if it's a transport error or a specific browser block
+      const detail = err.description ? `${err.message} (${err.description})` : err.message;
+      setStatusText(`Server unreachable: ${detail}`);
     });
 
     socket.on('match_found', ({ peerId, initiator }) => {

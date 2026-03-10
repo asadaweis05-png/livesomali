@@ -23,7 +23,7 @@ let waitingUsers = [];
 const activePairs = new Map(); // socket.id -> { peerId, room }
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  console.log(`[Socket] New connection attempt: ${socket.id} from ${socket.handshake.address}`);
 
   socket.on('find_match', () => {
     console.log(`[Match] User ${socket.id} looking for peer...`);
