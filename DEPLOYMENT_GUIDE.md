@@ -1,27 +1,27 @@
-# OmeTV Clone - Deployment Guide (Serverless)
+# OmeTV Clone - Deployment Guide (Socket.io)
 
-Good news! You **no longer need** to host a separate backend server. The entire app now runs using **Supabase Realtime**.
+Your architecture has been upgraded to a dedicated **Socket.io** signaling server for maximum global reliability.
 
-## 1. Supabase Configuration (Already Done)
-I have already connected your Supabase project (`qvjwnpcwerdfupduqxmb`) using the API key you provided. 
+## 1. Signaling Server Deployment
+Deploy the contents of the `server/` folder to a service that supports persistent WebSockets (e.g., **Railway**, **Render**, **DigitalOcean**, or your own **Node.js VPS**).
 
-**IMPORTANT**: Make sure **Realtime** is enabled for your project in the Supabase Dashboard:
-- Go to **Database > Replication**.
-- Ensure the `supabase_realtime` publication has the tables you need (though for Presence/Broadcast, this is usually enabled by default on the project).
+- **Folder**: `server/`
+- **Build Command**: `npm install`
+- **Start Command**: `npm start` (Runs `node server.js`)
+- **Port**: The server uses `process.env.PORT` or defaults to `5000`.
 
 ## 2. Frontend Deployment (Vercel)
-The project is optimized for Vercel. 
-- Just push the code to your GitHub repo.
-- Vercel will build everything automatically using the `vercel.json` file I created.
-- **Root Directory**: Keep it as `./` (the root of your repo).
+The client remains optimized for Vercel. 
+- **IMPORTANT**: Open `client/src/App.jsx` and update `SOCKET_URL` (line 38) with your newly deployed server URL.
+- Push the code to your GitHub repo.
+- Vercel will build the frontend automatically.
 
-## 3. How to Use
-- **Matchmaking**: Click "Next" to find a stranger. 
-- **Live Video**: Requires HTTPS (Vercel provides this) or Localhost.
-- **HD Video**: Now enabled by default for better quality.
-- **Games**: Once matched, click "Tic Tac Toe" to play together.
+## 3. Why the change?
+- **OmeTV Stability**: Dedicated WebSockets avoid the overhead of Supabase Realtime, leading to faster matchmaking.
+- **Global Relay (TURN)**: We still use the **OpenRelay** bridge, which bridges users on different networks (WiFi/4G).
+- **Auto-Play Fix**: remote videos are optimized for mobile auto-play.
 
-## 4. Troubleshooting Mobile
-- **Camera Access**: Phones will only allow camera access if the site is served over **HTTPS** (e.g., your Vercel URL).
-- **Auto-play**: I've added fixes to ensure the remote video starts playing automatically on mobile devices.
-- **Connection**: If the status says "Finding match..." for a long time, it means you are the only one online. Open the link on a second phone to test the matching!
+## 4. Local Testing
+1. In `server/`: Run `node server.js`
+2. In `client/`: Run `npm run dev`
+3. Enjoy!
