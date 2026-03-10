@@ -188,7 +188,8 @@ function App() {
       reconnectionAttempts: 20,
       reconnectionDelay: 1000,
       transports: ['websocket', 'polling'], // Try websocket first for stability
-      timeout: 20000
+      timeout: 20000,
+      withCredentials: true
     });
     socketRef.current = socket;
 
