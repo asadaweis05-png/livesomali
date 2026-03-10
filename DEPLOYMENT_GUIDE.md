@@ -1,30 +1,30 @@
-# OmeTV Clone - Deployment Guide (Socket.io)
+# OmeTV Architecture - Final Production Deployment
 
-Your architecture has been upgraded to a dedicated **Socket.io** signaling server for maximum global reliability.
+Your platform is now configured for a professional, global rollout with a dedicated **Railway** backend and **Vercel** frontend.
 
-## 1. Signaling Server Deployment
-Deploy the entire repository to **Railway**.
+## 1. Backend (Railway)
+The `server/` folder is designed for instant deployment.
 
-### 🛠️ Fix for "Railpack Could Not Determine Build" Error:
-I have added a `package.json` and `Procfile` to the **root** of your project. This tells Railway exactly how to find and start your server.
+- **URL**: `https://livesomali-production.up.railway.app`
+- **Root Directory**: Set this to `/server` in Railway settings (or just deploy the whole repo).
+- **Build Command**: `npm install`
+- **Start Command**: `npm start`
+- **Port**: Handled automatically by Railway via `process.env.PORT`.
 
-- **Option A (Automatic)**: Just deploy the repo. Railway should now see the root `package.json` and start automatically.
-- **Option B (Recommended)**: In your Railway Service Settings, set the **Root Directory** to `/server`. This is the cleanest way to deploy just the backend.
-- **Start Command**: `npm start` (Runs `node server.js`)
-- **Port**: The server uses `process.env.PORT` or defaults to `5000`.
+## 2. Frontend (Vercel)
+The `client/` folder is ready to connect to your Railway URL.
 
-## 2. Frontend Deployment (Vercel)
-The client remains optimized for Vercel. 
-- **IMPORTANT**: Open `client/src/App.jsx` and update `SOCKET_URL` (line 38) with your newly deployed server URL.
-- Push the code to your GitHub repo.
-- Vercel will build the frontend automatically.
+1. I have updated `client/src/App.jsx` with your Railway URL.
+2. Push your code to GitHub.
+3. Vercel will build the frontend automatically.
 
-## 3. Why the change?
-- **OmeTV Stability**: Dedicated WebSockets avoid the overhead of Supabase Realtime, leading to faster matchmaking.
-- **Global Relay (TURN)**: We still use the **OpenRelay** bridge, which bridges users on different networks (WiFi/4G).
-- **Auto-Play Fix**: remote videos are optimized for mobile auto-play.
+## 3. Global Connection Proofing
+- **NAT Traversal**: We use the **OpenRelay** community bridge to ensure users on different ISPs (Cellular vs WiFi) can connect.
+- **Bitrate Limit**: Capped at **500kbps** to prevent lag on mobile networks.
+- **Codec**: Forced **VP8** for universal compatibility on all phones and browsers.
+- **Auto-Play**: Includes detection and manual play recovery for mobile browsers.
 
-## 4. Local Testing
-1. In `server/`: Run `node server.js`
-2. In `client/`: Run `npm run dev`
-3. Enjoy!
+## 4. Troubleshooting
+- If the screen is black, look for the **"Tap to Start Video"** button.
+- If it says **"Searching..."**, you are waiting for another user to join the lobby.
+- Check the **Railway Logs** in your dashboard to see real-time matching activity.

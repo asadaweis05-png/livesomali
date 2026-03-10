@@ -6,10 +6,15 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
+// Health check route for Railway/Monitoring
+app.get('/', (req, res) => {
+  res.send("Socket.IO signaling server is running!");
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: '*', // Allows connections from Vercel and local dev
     methods: ['GET', 'POST']
   }
 });
@@ -21,7 +26,7 @@ io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   socket.on('find_match', () => {
-    console.log(`[Match] User ${socket.id} is looking for a match...`);
+    console.log(`[Match] User ${socket.id} looking for peer...`);
 
     // Clean up old matches
     if (activePairs.has(socket.id)) {
@@ -32,7 +37,6 @@ io.on('connection', (socket) => {
       activePairs.delete(info.peerId);
     }
 
-    // Remove if accidentally in waiting list
     waitingUsers = waitingUsers.filter(id => id !== socket.id);
 
     if (waitingUsers.length > 0) {
@@ -46,19 +50,19 @@ io.on('connection', (socket) => {
       const peerSocket = io.sockets.sockets.get(peerId);
       if (peerSocket) peerSocket.join(room);
 
-      // Notify both users
+      // pair logic: initiator vs receiver
       io.to(socket.id).emit('match_found', { peerId, initiator: true });
       io.to(peerId).emit('match_found', { peerId: socket.id, initiator: false });
 
-      console.log(`[Match] Matched ${socket.id} with ${peerId} in ${room}`);
+      console.log(`[Match] Paired ${socket.id} with ${peerId}`);
     } else {
       waitingUsers.push(socket.id);
-      console.log(`[Queue] User ${socket.id} waiting... Total in queue: ${waitingUsers.length}`);
+      console.log(`[Queue] User ${socket.id} added to queue. Size: ${waitingUsers.length}`);
     }
   });
 
   socket.on('signal', ({ peerId, signal }) => {
-    // Forward WebRTC signal to specific peer
+    // Forward WebRTC handshakes (offer, answer, candidates)
     socket.to(peerId).emit('signal', { signal, peerId: socket.id });
   });
 
