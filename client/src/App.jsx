@@ -8,67 +8,23 @@ const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'stun:stun.apple.com:19302' },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turn:openrelay.metered.ca:443?transport=tcp'
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: [
-        'turns:openrelay.metered.ca:443',
-        'turns:openrelay.metered.ca:443?transport=tcp'
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
-  ],
-  iceCandidatePoolSize: 10,
-  iceTransportPolicy: 'all',
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' }
+  ]
 };
 
 // Replace with your actual deployed server URL
 const SOCKET_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://livesomali-production.up.railway.app';
 
 function mungeSdp(sdp) {
-  let lines = sdp.split('\r\n');
-  const bitrate = 500;
-  let videoMLine = lines.findIndex(line => line.startsWith('m=video'));
-  if (videoMLine !== -1) {
-    let parts = lines[videoMLine].split(' ');
-    let vp8Index = lines.findIndex(line => line.includes('a=rtpmap') && line.includes('VP8/90000'));
-    if (vp8Index !== -1) {
-      let payloadType = lines[vp8Index].split(':')[1].split(' ')[0];
-      let payloads = parts.slice(3);
-      payloads = payloads.filter(p => p !== payloadType);
-      payloads.unshift(payloadType);
-      parts = [...parts.slice(0, 3), ...payloads];
-      lines[videoMLine] = parts.join(' ');
-    }
-  }
-  let newSdp = [];
-  let inVideo = false;
-  for (let line of lines) {
-    newSdp.push(line);
-    if (line.startsWith('m=video')) inVideo = true;
-    if (line.startsWith('m=audio')) inVideo = false;
-    if (inVideo && line.startsWith('c=IN')) {
-      newSdp.push(`b=AS:${bitrate}`);
-      newSdp.push(`b=TIAS:${bitrate * 1000}`);
-    }
-  }
-  return newSdp.join('\r\n');
+  // Bypassing SDP manipulation as it frequently breaks Safari and iOS WebRTC
+  return sdp;
 }
 
 async function getMediaStream() {
   try {
     const s = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } },
+      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
       audio: { echoCancellation: true, noiseSuppression: true },
     });
     return { stream: s, mode: 'full' };
