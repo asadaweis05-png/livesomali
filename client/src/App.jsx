@@ -187,9 +187,8 @@ function App() {
     const socket = io(SOCKET_URL, {
       reconnectionAttempts: 20,
       reconnectionDelay: 1000,
-      transports: ['websocket', 'polling'], // Try websocket first for stability
-      timeout: 20000,
-      withCredentials: true
+      transports: ['websocket', 'polling'],
+      timeout: 20000
     });
     socketRef.current = socket;
 
