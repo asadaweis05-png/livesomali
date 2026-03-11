@@ -177,37 +177,45 @@ function App() {
       const pc = pcRef.current;
       try {
         if (signal.type === 'offer') {
+          // 1. Set Remote (Offer)
           await pc.setRemoteDescription(new RTCSessionDescription(signal));
+          // 2. Create Local (Answer)
           const answer = await pc.createAnswer();
-          const mungedAnswer = mungeSdp(answer.sdp);
-          await pc.setLocalDescription({ type: 'answer', sdp: mungedAnswer });
-          socket.emit('signal', { peerId: fromId, signal: pc.localDescription.toJSON() });
+          await pc.setLocalDescription(answer);
+          // 3. Send Local Answer
+          socketRef.current.emit('signal', { peerId: fromId, signal: pc.localDescription });
 
-          for (const c of iceQueueRef.current) await pc.addIceCandidate(c);
+          // 4. Process any queued candidates now that remote description is set
+          for (const c of iceQueueRef.current) {
+            await pc.addIceCandidate(c).catch(e => console.error("Queued Ice Error (Offer):", e));
+          }
           iceQueueRef.current = [];
+
         } else if (signal.type === 'answer') {
+          // 1. Set Remote (Answer)
           await pc.setRemoteDescription(new RTCSessionDescription(signal));
-          for (const c of iceQueueRef.current) await pc.addIceCandidate(c);
+
+          // 2. Process any queued candidates now that remote description is set
+          for (const c of iceQueueRef.current) {
+            await pc.addIceCandidate(c).catch(e => console.error("Queued Ice Error (Answer):", e));
+          }
           iceQueueRef.current = [];
+
         } else if (signal.candidate) {
+          // It's an ICE Candidate
           const c = new RTCIceCandidate(signal);
-          if (pc.remoteDescription?.type) await pc.addIceCandidate(c);
-          else iceQueueRef.current.push(c);
+          if (pc.remoteDescription && pc.remoteDescription.type) {
+            // Safe to add immediately
+            await pc.addIceCandidate(c).catch(e => console.error("Live Ice Error:", e));
+          } else {
+            // Buffer it until remote description is set
+            iceQueueRef.current.push(c);
+          }
         }
       } catch (err) {
         console.error('Signal Error:', err);
       }
     });
-
-    socket.on('receive_message', ({ message }) => {
-      setMessages(prev => [...prev, { text: message, sent: false }]);
-    });
-
-    socket.on('peer_disconnected', () => {
-      console.log('Peer disconnected');
-      findMatch();
-    });
-
     socket.on('disconnect', () => {
       setStatusText('Disconnected. Retrying...');
     });
