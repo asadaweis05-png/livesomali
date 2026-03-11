@@ -216,6 +216,15 @@ function App() {
         console.error('Signal Error:', err);
       }
     });
+
+    socket.on('receive_message', ({ message }) => {
+      setMessages(prev => [...prev, { text: message, sent: false }]);
+    });
+
+    socket.on('peer_disconnected', () => {
+      console.log('Peer disconnected');
+      findMatch();
+    });
     socket.on('disconnect', () => {
       setStatusText('Disconnected. Retrying...');
     });
