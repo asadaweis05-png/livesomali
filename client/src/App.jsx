@@ -193,38 +193,25 @@ function App() {
       const pc = pcRef.current;
       try {
         if (signal.type === 'offer') {
-          // 1. Set Remote (Offer)
           await pc.setRemoteDescription(new RTCSessionDescription(signal));
-          // 2. Create Local (Answer)
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          // 3. Send Local Answer (CRITICAL: Must be serialized via toJSON to avoid empty object transmission)
           socketRef.current.emit('signal', { peerId: fromId, signal: pc.localDescription.toJSON() });
 
-          // 4. Process any queued candidates now that remote description is set
-          for (const c of iceQueueRef.current) {
-            await pc.addIceCandidate(c).catch(e => console.error("Queued Ice Error (Offer):", e));
-          }
+          const queue = [...iceQueueRef.current];
           iceQueueRef.current = [];
-
+          for (const c of queue) await pc.addIceCandidate(c).catch(console.error);
         } else if (signal.type === 'answer') {
-          // 1. Set Remote (Answer)
           await pc.setRemoteDescription(new RTCSessionDescription(signal));
 
-          // 2. Process any queued candidates now that remote description is set
-          for (const c of iceQueueRef.current) {
-            await pc.addIceCandidate(c).catch(e => console.error("Queued Ice Error (Answer):", e));
-          }
+          const queue = [...iceQueueRef.current];
           iceQueueRef.current = [];
-
+          for (const c of queue) await pc.addIceCandidate(c).catch(console.error);
         } else if (signal.candidate) {
-          // It's an ICE Candidate
           const c = new RTCIceCandidate(signal);
           if (pc.remoteDescription && pc.remoteDescription.type) {
-            // Safe to add immediately
-            await pc.addIceCandidate(c).catch(e => console.error("Live Ice Error:", e));
+            await pc.addIceCandidate(c).catch(console.error);
           } else {
-            // Buffer it until remote description is set
             iceQueueRef.current.push(c);
           }
         }
@@ -253,7 +240,14 @@ function App() {
     pcRef.current = pc;
 
     const s = streamRef.current;
-    if (s && s.getTracks) s.getTracks().forEach(t => pc.addTrack(t, s));
+    if (s && s.getTracks && s.getTracks().length > 0) {
+      s.getTracks().forEach(t => pc.addTrack(t, s));
+    } else {
+      // Critical WebRTC Fallback: If no local camera is available, explicitly request the receiver's video
+      // If we don't do this, WebRTC will not negotiate 'm=video' sections, and you will never receive their stream.
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+    }
 
     pc.ontrack = (e) => {
       if (e.streams?.[0]) setRemoteStream(e.streams[0]);
@@ -262,14 +256,14 @@ function App() {
 
     pc.onicecandidate = (e) => {
       if (e.candidate) {
-        if (e.candidate.candidate.includes('relay')) setConnectionType('Relay Bridge');
-        else if (!connectionType) setConnectionType('Direct (P2P)');
         socketRef.current.emit('signal', { peerId: partnerId, signal: e.candidate.toJSON() });
       }
     };
 
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') setStatusText('Securely Connected');
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        setStatusText('Securely Connected');
+      }
       if (pc.iceConnectionState === 'failed') {
         pc.restartIce();
         setTimeout(() => { if (pc.iceConnectionState === 'failed') findMatch(); }, 10000);
@@ -279,14 +273,16 @@ function App() {
     timeoutRef.current = setTimeout(() => { if (pc.connectionState !== 'connected') findMatch(); }, 25000);
 
     if (isInit) {
-      setTimeout(async () => {
+      // Remove artificial timeouts to prevent signaling delays
+      (async () => {
         try {
           const offer = await pc.createOffer();
-          const mungedOffer = mungeSdp(offer.sdp);
-          await pc.setLocalDescription({ type: 'offer', sdp: mungedOffer });
+          await pc.setLocalDescription(offer);
           socketRef.current.emit('signal', { peerId: partnerId, signal: pc.localDescription.toJSON() });
-        } catch (err) { findMatch(); }
-      }, 800);
+        } catch (err) {
+          findMatch();
+        }
+      })();
     }
   }
 
