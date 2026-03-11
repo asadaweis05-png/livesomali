@@ -57,6 +57,7 @@ function App() {
   const [mediaError, setMediaError] = useState(null);
   const [connectionType, setConnectionType] = useState(null);
   const [remoteNeedsPlay, setRemoteNeedsPlay] = useState(false);
+  const [iceServersLoaded, setIceServersLoaded] = useState(false);
 
   const socketRef = useRef(null);
   const myVideo = useRef(null);
@@ -81,7 +82,8 @@ function App() {
           };
         }
       })
-      .catch(err => console.error('Failed to load TURN credentials, falling back to STUN.', err));
+      .catch(err => console.error('Failed to load TURN credentials, falling back to STUN.', err))
+      .finally(() => setIceServersLoaded(true));
   }, []);
 
   useEffect(() => { streamRef.current = stream; }, [stream]);
@@ -157,6 +159,8 @@ function App() {
 
   // Socket.io Setup
   useEffect(() => {
+    if (!iceServersLoaded) return;
+
     const socket = io(SOCKET_URL, {
       reconnectionAttempts: 20,
       reconnectionDelay: 1000,
@@ -234,7 +238,7 @@ function App() {
     });
 
     return () => socket.disconnect();
-  }, [findMatch]);
+  }, [findMatch, iceServersLoaded]);
 
   function setupPC(partnerId, isInit) {
     const pc = new RTCPeerConnection(iceServersRef.current);
