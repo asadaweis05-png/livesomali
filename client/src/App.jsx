@@ -198,8 +198,8 @@ function App() {
           // 2. Create Local (Answer)
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          // 3. Send Local Answer
-          socketRef.current.emit('signal', { peerId: fromId, signal: pc.localDescription });
+          // 3. Send Local Answer (CRITICAL: Must be serialized via toJSON to avoid empty object transmission)
+          socketRef.current.emit('signal', { peerId: fromId, signal: pc.localDescription.toJSON() });
 
           // 4. Process any queued candidates now that remote description is set
           for (const c of iceQueueRef.current) {
