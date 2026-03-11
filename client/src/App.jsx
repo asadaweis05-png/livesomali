@@ -250,7 +250,20 @@ function App() {
     }
 
     pc.ontrack = (e) => {
-      if (e.streams?.[0]) setRemoteStream(e.streams[0]);
+      console.log('Track received:', e.track.kind);
+      if (e.streams && e.streams[0]) {
+        setRemoteStream(e.streams[0]);
+        // Force direct DOM binding to prevent React state cycle delays causing black screens
+        if (remoteVideo.current) {
+          if (remoteVideo.current.srcObject !== e.streams[0]) {
+            remoteVideo.current.srcObject = e.streams[0];
+          }
+          remoteVideo.current.play().catch(err => {
+            console.error('Auto-play blocked:', err);
+            setRemoteNeedsPlay(true);
+          });
+        }
+      }
       setStatusText('Global Bridge Active');
     };
 
