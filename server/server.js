@@ -24,7 +24,7 @@ app.get('/api/get-turn-credentials', async (req, res) => {
   }
 
   try {
-    const response = await fetch(`https://livesomali.metered.live/api/v1/turn/credentials?apiKey=${meteredApiKey}`);
+    const response = await fetch(`https://theqnew.metered.live/api/v1/turn/credentials?apiKey=d185a98a85a4ff5d1b26b57bd6389e12574d`);
     const iceServers = await response.json();
     res.json(iceServers);
   } catch (err) {
