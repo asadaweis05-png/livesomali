@@ -4,13 +4,10 @@ import io from 'socket.io-client';
 import './App.css';
 import TicTacToe from './components/TicTacToe';
 
-const ICE_SERVERS = {
+const DEFAULT_ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:stun.services.mozilla.com' }
   ],
   iceCandidatePoolSize: 10,
@@ -70,6 +67,22 @@ function App() {
   const timeoutRef = useRef(null);
   const isMatchedRef = useRef(false);
   const peerIdRef = useRef(null);
+  const iceServersRef = useRef(DEFAULT_ICE_SERVERS);
+
+  useEffect(() => {
+    fetch(`${SOCKET_URL}/api/get-turn-credentials`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          console.log('Successfully fetched dynamic TURN/STUN credentials');
+          iceServersRef.current = {
+            ...DEFAULT_ICE_SERVERS,
+            iceServers: data
+          };
+        }
+      })
+      .catch(err => console.error('Failed to load TURN credentials, falling back to STUN.', err));
+  }, []);
 
   useEffect(() => { streamRef.current = stream; }, [stream]);
 
@@ -224,7 +237,7 @@ function App() {
   }, [findMatch]);
 
   function setupPC(partnerId, isInit) {
-    const pc = new RTCPeerConnection(ICE_SERVERS);
+    const pc = new RTCPeerConnection(iceServersRef.current);
     pcRef.current = pc;
 
     const s = streamRef.current;

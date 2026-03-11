@@ -11,6 +11,31 @@ app.get('/', (req, res) => {
   res.send("Socket.IO signaling server is running!");
 });
 
+// Endpoint to fetch dynamic TURN credentials securely
+app.get('/api/get-turn-credentials', async (req, res) => {
+  const meteredApiKey = process.env.METERED_API_KEY;
+  if (!meteredApiKey) {
+    // Fallback to STUN if no API key is provided
+    return res.json([
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun.services.mozilla.com' }
+    ]);
+  }
+
+  try {
+    const response = await fetch(`https://livesomali.metered.live/api/v1/turn/credentials?apiKey=${meteredApiKey}`);
+    const iceServers = await response.json();
+    res.json(iceServers);
+  } catch (err) {
+    console.error('Failed to fetch TURN credentials:', err);
+    res.json([ // Fallback on failure
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ]);
+  }
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
