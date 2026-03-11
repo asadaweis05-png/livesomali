@@ -14,6 +14,7 @@ app.get('/', (req, res) => {
 // Endpoint to fetch dynamic TURN credentials securely
 app.get('/api/get-turn-credentials', async (req, res) => {
   try {
+    const fetch = require('node-fetch');
     const response = await fetch(`https://theqnew.metered.live/api/v1/turn/credentials?apiKey=d185a98a85a4ff5d1b26b57bd6389e12574d`);
     const iceServers = await response.json();
     res.json(iceServers);
