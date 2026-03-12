@@ -629,6 +629,10 @@ function App() {
           </div>
 
           <div className={`ome-chat-drawer ${isChatOpen ? 'active' : ''}`}>
+             <div className="ome-chat-header">
+                <h3>Sheekaysi</h3>
+                <button className="chat-close-btn" onClick={() => setIsChatOpen(false)}><X size={20} /></button>
+             </div>
              <div className="ome-chat-messages">
                 {messages.map((msg, i) => (
                   <div key={i} className={`ome-msg ${msg.sent ? 'sent' : 'received'}`}>{msg.text}</div>
@@ -657,8 +661,8 @@ function App() {
           <MessageCircle size={24} />
           <span>Chat</span>
         </button>
-        <button onClick={() => setIsChatOpen(!isChatOpen)} className={isChatOpen ? 'active' : ''}>
-          <Mail size={24} />
+        <button onClick={() => setIsChatOpen(!isChatOpen)} className={`nav-chat-btn ${isChatOpen ? 'active' : ''}`}>
+          <img src="https://image2url.com/r2/default/images/1773292582841-f5fb7cbb-311d-4bbc-8261-d9c6c6510101.png" alt="Chat" className="nav-logo-icon" />
           <span>Inbox</span>
         </button>
         <button className={currentView === 'games' ? 'active' : ''} onClick={() => setCurrentView('games')}>
@@ -713,7 +717,13 @@ function App() {
         .floating-emoji { position: absolute; font-size: 2rem; pointer-events: none; animation: floatUp 2s ease-out forwards; z-index: 100; }
         @keyframes floatUp { from { transform: translateY(0) scale(0.5); opacity: 1; } to { transform: translateY(-150px) scale(1.5); opacity: 0; } }
 
-        .ome-chat-drawer { position: absolute; right: 0; top: 0; bottom: 0; width: 300px; background: rgba(0,0,0,0.8); backdrop-filter: blur(20px); border-left: 1px solid #333; transform: translateX(100%); transition: 0.3s; z-index: 50; display: flex; flex-direction: column; }
+        .nav-logo-icon { width: 28px; height: 28px; object-fit: contain; filter: grayscale(1) brightness(1.5); transition: 0.3s; }
+        .active .nav-logo-icon { filter: none; }
+        .ome-chat-header { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid #222; }
+        .ome-chat-header h3 { margin: 0; font-size: 0.9rem; color: var(--accent-primary); }
+        .chat-close-btn { background: none; border: none; color: #888; cursor: pointer; }
+
+        .ome-chat-drawer { position: absolute; right: 0; top: 0; bottom: 0; width: 300px; background: rgba(0,0,0,0.9); backdrop-filter: blur(20px); border-left: 1px solid #333; transform: translateX(100%); transition: 0.3s; z-index: 50; display: flex; flex-direction: column; }
         .ome-chat-drawer.active { transform: translateX(0); }
         .ome-chat-messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
         .ome-chat-input { padding: 15px; display: flex; gap: 10px; border-top: 1px solid #222; }
