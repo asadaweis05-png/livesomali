@@ -35,7 +35,12 @@ const io = new Server(server, {
   }
 });
 
-  const userNames = new Map(); // socket.id -> name
+let waitingUsers = [];
+const activePairs = new Map(); // socket.id -> { peerId, room }
+const userNames = new Map(); // socket.id -> name
+
+io.on('connection', (socket) => {
+  console.log(`[Socket] New connection attempt: ${socket.id}`);
 
   socket.on('set_name', (name) => {
     userNames.set(socket.id, name);
