@@ -6,7 +6,11 @@
 }
 
 .video-container {
-  height: calc(100vh - 150px);
+  flex: 1;
+  display: flex;
+  gap: 20px;
+  padding: 20px;
+  width: 100%;
 }
 
 .chat-panel {

@@ -6,6 +6,7 @@ import * as faceapi from 'face-api.js';
 import './App.css';
 import TicTacToe from './components/TicTacToe';
 import RPS from './components/RPS';
+import { supabase } from './supabase';
 
 const DEFAULT_ICE_SERVERS = {
   iceServers: [
@@ -66,7 +67,6 @@ function App() {
   const [remoteNeedsPlay, setRemoteNeedsPlay] = useState(false);
   const [iceServersLoaded, setIceServersLoaded] = useState(false);
   const [activeGame, setActiveGame] = useState(null);
-  const [showNameInput, setShowNameInput] = useState(!localStorage.getItem('ls_name'));
   const [remoteMuted, setRemoteMuted] = useState(false);
   const [remoteVideoOff, setRemoteVideoOff] = useState(false);
 
@@ -96,6 +96,27 @@ function App() {
       })
       .catch(err => console.error('Failed to load TURN credentials, falling back to STUN.', err))
       .finally(() => setIceServersLoaded(true));
+  }, []);
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const name = session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Isticmaale';
+        setUserName(name);
+        socketRef.current?.emit('set_name', name);
+      }
+    };
+    checkUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const name = session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Isticmaale';
+        setUserName(name);
+        socketRef.current?.emit('set_name', name);
+      }
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => { streamRef.current = stream; }, [stream]);
@@ -171,17 +192,21 @@ function App() {
     if (!stream || !myVideo.current || !modelRef.current) return;
     
     try {
-      // Nudity Detection
+      // Nudity Detection (Stricter Logic)
       const predictions = await modelRef.current.classify(myVideo.current);
-      const isNude = predictions.some(p => (p.className === 'Porn' || p.className === 'Hentai' || p.className === 'Sexy') && p.probability > 0.7);
+      // We target 'Porn', 'Sexy', 'Hentai' with a lower threshold (0.5 instead of 0.7) for safety
+      const isNude = predictions.some(p => 
+        (p.className === 'Porn' || p.className === 'Hentai' || p.className === 'Sexy') && p.probability > 0.5
+      );
       
       if (isNude) {
-        setMediaError('Xayiraad: Nudity laguma ogola!');
+        console.warn('NSFW Violation Detected:', predictions);
+        setMediaError('Xayiraad: Nudity/Sexy laguma ogola!');
         setStatusText('La mamnuucay: Nudity');
         stream.getTracks().forEach(t => t.stop());
         setStream(null);
         socketRef.current?.disconnect();
-        alert('VIOLATION: Nudity laguma ogola barnaamijkan!');
+        alert('VIOLATION: Kontantigan laguma ogola barnaamijkan! Adiga waa lagu mamnuucay.');
         return;
       }
 
@@ -393,7 +418,7 @@ function App() {
   };
 
   return (
-    <div className="app">
+    <div className={`app ${activeGame ? 'vs-layout' : ''}`}>
       <div className="status-badge">
         <div className={isMatched ? '' : 'pulse'}></div>
         {statusText}
@@ -401,75 +426,57 @@ function App() {
       </div>
 
       <div className="video-container">
-        <div className="video-wrapper glass">
+        <div className="video-wrapper glass my-vid">
           <video playsInline muted ref={myVideo} autoPlay className={`f-${beautyFilter}`} />
           <div className="video-label">{userName || 'Adiga'}</div>
-          {mediaError && <div className="video-off-overlay"><button className="btn btn-primary btn-sm" onClick={initMedia}><RefreshCw size={14} /> Isku day mar kale</button></div>}
+          {mediaError && <div className="video-off-overlay"><button className="btn btn-primary btn-sm" onClick={initMedia}><RefreshCw size={14} /> Mar kale</button></div>}
         </div>
-        <div className="video-wrapper glass">
+        {!activeGame && <div className="vs-divider">VS</div>}
+        <div className="video-wrapper glass peer-vid">
           <video playsInline ref={remoteVideo} autoPlay />
-          {!remoteStream && <div className="video-placeholder">{isMatched ? 'Iskuxidhaaya xaqiiqo...' : 'Sugaya qof shisheeye ah...'}</div>}
+          {!remoteStream && <div className="video-placeholder">{isMatched ? 'Iskuxidhaaya...' : 'Sugaya...'}</div>}
           <div className="state-badge">
-             {remoteMuted && <div className="badge-pill">Afka waa xiran yahay</div>}
-             {remoteVideoOff && <div className="badge-pill">Kamarada waa xiran tahay</div>}
+             {remoteMuted && <div className="badge-pill">Muted</div>}
+             {remoteVideoOff && <div className="badge-pill">Off</div>}
           </div>
           {remoteNeedsPlay && (
             <div className="video-off-overlay" onClick={() => { remoteVideo.current.play(); setRemoteNeedsPlay(false); }} style={{ background: 'rgba(0,0,0,0.8)', cursor: 'pointer' }}>
-              <button className="btn btn-primary"><Play size={20} /> Bilow Video-ga</button>
+              <button className="btn btn-primary"><Play size={20} /></button>
             </div>
           )}
           <div className="video-label">
-            {remoteName}
-            {isMatched && <button className="btn btn-sm" style={{ padding: '4px 8px', marginLeft: '10px', fontSize: '0.6rem', background: 'rgba(255,255,255,0.1)' }} onClick={() => socketRef.current?.emit('friend_request')}>+ Saaxiib</button>}
+            {remoteName || 'Shisheeye'}
+            {isMatched && <button className="btn btn-sm" style={{ padding: '2px 6px', marginLeft: '5px', fontSize: '0.55rem', background: 'rgba(255,255,255,0.1)' }} onClick={() => socketRef.current?.emit('friend_request')}>+ Saaxiib</button>}
           </div>
         </div>
       </div>
 
       <div className={`chat-panel glass ${isChatOpen ? 'active' : ''}`}>
         <div className="chat-messages">
-          {messages.length === 0 && !isMatched && <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}><Info size={24} style={{ marginBottom: '8px' }} /><p>Cid kasta la sheekayso!</p></div>}
+          {messages.length === 0 && !isMatched && <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}><p>Ku dhufo qof!</p></div>}
           {messages.map((msg, i) => <div key={i} className={`message ${msg.sent ? 'sent' : 'received'}`}>{msg.text}</div>)}
         </div>
         <form className="chat-input" onSubmit={sendMessage}>
-          <input type="text" placeholder={isMatched ? "Qor halkan..." : "Sugaya..."} value={inputText} onChange={(e) => setInputText(e.target.value)} disabled={!isMatched} />
-          <button type="submit" className="btn btn-primary" style={{ padding: '8px' }} disabled={!isMatched}><MessageCircle size={18} /></button>
+          <input type="text" placeholder="Farriin..." value={inputText} onChange={(e) => setInputText(e.target.value)} disabled={!isMatched} />
+          <button type="submit" className="btn btn-primary" disabled={!isMatched}><MessageCircle size={18} /></button>
         </form>
       </div>
 
-      <div className="game-panel glass">
-        <h4 style={{ margin: '0 0 10px 0', fontSize: '0.8rem' }}>LIVE GAMES</h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <button className="btn btn-primary btn-sm" style={{ width: '100%' }} onClick={isMatched ? () => setActiveGame('ttt') : undefined} disabled={!isMatched}><Gamepad2 size={16} /> Tic Tac Toe</button>
-          <button className="btn btn-primary btn-sm" style={{ width: '100%', background: 'rgba(255,255,255,0.1)', borderColor: 'transparent' }} onClick={isMatched ? () => setActiveGame('rps') : undefined} disabled={!isMatched}><Gamepad2 size={16} /> Rock Paper Scissors</button>
+      {!activeGame && (
+        <div className="game-panel glass">
+          <h4 style={{ margin: '0 0 10px 0', fontSize: '0.7rem', opacity: 0.6 }}>CIYAARAHA</h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <button className="btn btn-primary btn-sm" style={{ width: '100%', fontSize: '0.75rem' }} onClick={isMatched ? () => setActiveGame('ttt') : undefined} disabled={!isMatched}><Gamepad2 size={14} /> Tic Tac Toe</button>
+            <button className="btn btn-primary btn-sm" style={{ width: '100%', fontSize: '0.75rem', background: 'rgba(255,255,255,0.05)', borderColor: 'transparent' }} onClick={isMatched ? () => setActiveGame('rps') : undefined} disabled={!isMatched}><Gamepad2 size={14} /> RPS</button>
+          </div>
         </div>
-      </div>
+      )}
 
       {activeGame === 'ttt' && <TicTacToe socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
       {activeGame === 'rps' && <RPS socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
 
-      {showNameInput && (
-        <div className="game-overlay glass" style={{ maxWidth: '300px', padding: '30px' }}>
-          <h3 style={{ marginTop: 0 }}>Gali Magacaaga</h3>
-          <input 
-            type="text" 
-            className="chat-input" 
-            style={{ width: '100%', marginBottom: '15px', color: '#fff' }} 
-            placeholder="Magacaaga halkan ku qor..." 
-            value={userName} 
-            onChange={(e) => setUserName(e.target.value)} 
-          />
-          <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => {
-            if (userName.trim()) {
-              localStorage.setItem('ls_name', userName);
-              setShowNameInput(false);
-              socketRef.current?.emit('set_name', userName);
-            }
-          }}>BILOW</button>
-        </div>
-      )}
-
       <div className="controls glass">
-        <button className={`btn ${audioEnabled ? 'btn-primary' : 'btn-danger'}`} onClick={() => { 
+        <button className={`btn btn-circle ${audioEnabled ? 'btn-primary' : 'btn-danger'}`} onClick={() => { 
           if (stream?.getAudioTracks) { 
             const newState = !audioEnabled;
             stream.getAudioTracks()[0].enabled = newState; 
@@ -478,7 +485,7 @@ function App() {
           } 
         }}>{audioEnabled ? <Mic size={20} /> : <MicOff size={20} />}</button>
         
-        <button className={`btn ${videoEnabled ? 'btn-primary' : 'btn-danger'}`} onClick={() => { 
+        <button className={`btn btn-circle ${videoEnabled ? 'btn-primary' : 'btn-danger'}`} onClick={() => { 
           if (stream?.getVideoTracks) { 
             const newState = !videoEnabled;
             stream.getVideoTracks()[0].enabled = newState; 
@@ -488,26 +495,116 @@ function App() {
         }}>{videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}</button>
         
         <div className="filter-shelf">
-          {['none', 'nuru', 'diirran', 'soft'].map(f => (
-            <button key={f} className={`filter-dot ${beautyFilter === f ? 'active' : ''}`} onClick={() => setBeautyFilter(f)} title={f} />
+          {['none', 'nuru', 'diirran', 'soft', 'tiktok'].map(f => (
+            <button key={f} className={`filter-dot d-${f} ${beautyFilter === f ? 'active' : ''}`} onClick={() => setBeautyFilter(f)} />
           ))}
         </div>
 
-        <button className="btn btn-primary" onClick={findMatch} style={{ background: 'linear-gradient(135deg, #FFB75E 0%, #ED8F03 100%)' }}><SkipForward size={20} /> Xiga</button>
+        <button className="btn btn-next" onClick={findMatch}><SkipForward size={20} /> <span className="hide-mobile">XIGA</span></button>
       </div>
 
-      <button className="chat-toggle-btn btn btn-icon btn-primary" style={{ display: 'none' }} onClick={() => setIsChatOpen(!isChatOpen)}>
-        <MessageCircle size={24} />
+      <button className={`chat-toggle-floating ${isChatOpen ? 'active' : ''}`} onClick={() => setIsChatOpen(!isChatOpen)}>
+        <MessageCircle size={22} />
       </button>
 
       <style>{`
-        .filter-shelf { display: flex; gap: 8px; background: rgba(0,0,0,0.3); padding: 5px 15px; border-radius: 100px; }
-        .filter-dot { width: 24px; height: 24px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.2); cursor: pointer; transition: 0.2s; }
-        .filter-dot.active { border-color: #fff; transform: scale(1.2); }
-        .filter-dot:nth-child(1) { background: #eee; }
-        .filter-dot:nth-child(2) { background: #fee2e2; }
-        .filter-dot:nth-child(3) { background: #ffedd5; }
-        .filter-dot:nth-child(4) { background: #f3e8ff; }
+        .app.vs-layout .video-container {
+          position: fixed;
+          top: 20px;
+          left: 50%;
+          transform: translateX(-50%);
+          display: flex;
+          flex-direction: row;
+          gap: 40px;
+          width: auto;
+          z-index: 1000;
+          padding: 0;
+        }
+        .vs-layout .video-wrapper {
+          width: 80px;
+          height: 80px;
+          border-radius: 50%;
+          border: 3px solid var(--accent-primary);
+          overflow: hidden;
+          background: #000;
+          box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+        }
+        .vs-layout .video-label {
+          position: absolute;
+          bottom: -25px;
+          left: 50%;
+          transform: translateX(-50%);
+          font-size: 0.6rem;
+          white-space: nowrap;
+          background: none;
+        }
+        .vs-layout .video-wrapper video {
+           object-fit: cover;
+           width: 100%;
+           height: 100%;
+        }
+        .vs-layout .state-badge, .vs-layout .controls { display: none; }
+        .vs-layout .btn-next { display: none; }
+        
+        .chat-toggle-floating {
+          position: fixed;
+          bottom: 30px;
+          left: 20px;
+          width: 50px;
+          height: 50px;
+          border-radius: 50%;
+          border: none;
+          background: var(--accent-primary);
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+          z-index: 100;
+          transition: all 0.3s;
+        }
+        .chat-toggle-floating.active { background: #ff4d4d; transform: rotate(90deg); }
+        
+        video.f-tiktok {
+          filter: brightness(1.15) contrast(1.05) saturate(1.25) blur(0.2px);
+          box-shadow: inset 0 0 50px rgba(255,255,255,0.1);
+        }
+        .filter-shelf {
+          display: flex;
+          gap: 10px;
+          background: rgba(255,255,255,0.05);
+          padding: 8px 15px;
+          border-radius: 50px;
+          border: 1px solid rgba(255,255,255,0.1);
+        }
+        .filter-dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: 0.3s; }
+        .filter-dot.active { border-color: #fff; transform: scale(1.3); }
+        .d-none { background: #888; }
+        .d-nuru { background: #fff7ed; box-shadow: 0 0 10px #fff7ed; }
+        .d-diirran { background: #ff7e5f; box-shadow: 0 0 10px #ff7e5f; }
+        .d-soft { background: #d8b4fe; box-shadow: 0 0 10px #d8b4fe; }
+        .d-tiktok { background: linear-gradient(45deg, #00f2ea, #ff0050); border: 1px solid white; }
+
+        .btn-circle { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0 !important; }
+        .btn-next { background: linear-gradient(90deg, #8b5cf6, #ec4899); padding: 12px 25px; border-radius: 50px; font-weight: 800; letter-spacing: 1px; }
+        
+        .vs-divider {
+           position: absolute;
+           left: 50%;
+           top: 50%;
+           transform: translate(-50%, -50%);
+           font-size: 2rem;
+           font-weight: 900;
+           color: #fff;
+           opacity: 0.2;
+           z-index: 1;
+        }
+
+        @media (max-width: 600px) {
+          .hide-mobile { display: none; }
+          .video-container:not(.vs-layout) { padding: 10px; gap: 10px; }
+          .video-wrapper:not(.vs-layout) { border-radius: 15px; }
+        }
       `}</style>
     </div>
   );
