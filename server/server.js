@@ -35,16 +35,19 @@ const io = new Server(server, {
   }
 });
 
-let waitingUsers = [];
-const activePairs = new Map(); // socket.id -> { peerId, room }
+  const userNames = new Map(); // socket.id -> name
 
-io.on('connection', (socket) => {
-  console.log(`[Socket] New connection attempt: ${socket.id} from ${socket.handshake.address}`);
+  socket.on('set_name', (name) => {
+    userNames.set(socket.id, name);
+    const info = activePairs.get(socket.id);
+    if (info) {
+      socket.to(info.peerId).emit('update_remote_name', name);
+    }
+  });
 
   socket.on('find_match', () => {
     console.log(`[Match] User ${socket.id} looking for peer...`);
 
-    // Clean up old matches
     if (activePairs.has(socket.id)) {
       const info = activePairs.get(socket.id);
       socket.to(info.peerId).emit('peer_disconnected');
@@ -66,20 +69,34 @@ io.on('connection', (socket) => {
       const peerSocket = io.sockets.sockets.get(peerId);
       if (peerSocket) peerSocket.join(room);
 
-      // pair logic: initiator vs receiver
-      io.to(socket.id).emit('match_found', { peerId, initiator: true });
-      io.to(peerId).emit('match_found', { peerId: socket.id, initiator: false });
+      const myName = userNames.get(socket.id) || 'Qof';
+      const peerName = userNames.get(peerId) || 'Qof';
+
+      io.to(socket.id).emit('match_found', { peerId, initiator: true, peerName });
+      io.to(peerId).emit('match_found', { peerId: socket.id, initiator: false, peerName: myName });
 
       console.log(`[Match] Paired ${socket.id} with ${peerId}`);
     } else {
       waitingUsers.push(socket.id);
-      console.log(`[Queue] User ${socket.id} added to queue. Size: ${waitingUsers.length}`);
     }
   });
 
   socket.on('signal', ({ peerId, signal }) => {
-    // Forward WebRTC handshakes (offer, answer, candidates)
     socket.to(peerId).emit('signal', { signal, peerId: socket.id });
+  });
+
+  socket.on('media_state', ({ audio, video }) => {
+    const info = activePairs.get(socket.id);
+    if (info) {
+      socket.to(info.peerId).emit('peer_media_state', { audio, video });
+    }
+  });
+
+  socket.on('friend_request', () => {
+    const info = activePairs.get(socket.id);
+    if (info) {
+      socket.to(info.peerId).emit('receive_friend_request', { fromName: userNames.get(socket.id) });
+    }
   });
 
   socket.on('send_message', (message) => {
@@ -97,8 +114,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
     waitingUsers = waitingUsers.filter(id => id !== socket.id);
+    userNames.delete(socket.id);
     const info = activePairs.get(socket.id);
     if (info) {
       socket.to(info.peerId).emit('peer_disconnected');

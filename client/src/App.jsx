@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Video, VideoOff, Mic, MicOff, MessageCircle, Gamepad2, SkipForward, Info, RefreshCw, Users, Globe, Play } from 'lucide-react';
 import io from 'socket.io-client';
+import * as nsfwjs from 'nsfwjs';
+import * as faceapi from 'face-api.js';
 import './App.css';
 import TicTacToe from './components/TicTacToe';
 import RPS from './components/RPS';
@@ -54,12 +56,19 @@ function App() {
   const [isInitiator, setIsInitiator] = useState(false);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(true);
-  const [statusText, setStatusText] = useState('Initializing...');
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [statusText, setStatusText] = useState('Dhisaya...');
+  const [userName, setUserName] = useState(localStorage.getItem('ls_name') || '');
+  const [remoteName, setRemoteName] = useState('');
+  const [beautyFilter, setBeautyFilter] = useState('none');
   const [mediaError, setMediaError] = useState(null);
   const [connectionType, setConnectionType] = useState(null);
   const [remoteNeedsPlay, setRemoteNeedsPlay] = useState(false);
   const [iceServersLoaded, setIceServersLoaded] = useState(false);
   const [activeGame, setActiveGame] = useState(null);
+  const [showNameInput, setShowNameInput] = useState(!localStorage.getItem('ls_name'));
+  const [remoteMuted, setRemoteMuted] = useState(false);
+  const [remoteVideoOff, setRemoteVideoOff] = useState(false);
 
 
   const socketRef = useRef(null);
@@ -122,7 +131,7 @@ function App() {
 
   const initMedia = useCallback(async () => {
     setMediaError(null);
-    setStatusText('Allow Camera/Mic access...');
+    setStatusText('Fadlan ogolow kamarada/makarafoonka...');
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
       setStream(null);
@@ -134,12 +143,64 @@ function App() {
       setMediaError(null);
       findMatch();
     } catch (err) {
-      setMediaError('Media blocked. Using text-only.');
-      setStatusText('Searching (No Camera)...');
+      setMediaError('Kamaradu waa xiran tahay. Qoraal kaliya.');
+      setStatusText('Raadinaya (Kamarad la\'aan)...');
       setStream({ getTracks: () => [] });
       findMatch();
     }
   }, [findMatch]);
+
+  const modelRef = useRef(null);
+  const faceModelLoaded = useRef(false);
+
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        modelRef.current = await nsfwjs.load();
+        await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights');
+        faceModelLoaded.current = true;
+        console.log('Moderation models loaded');
+      } catch (err) {
+        console.error('Failed to load models:', err);
+      }
+    };
+    loadModels();
+  }, []);
+
+  const checkModeration = useCallback(async () => {
+    if (!stream || !myVideo.current || !modelRef.current) return;
+    
+    try {
+      // Nudity Detection
+      const predictions = await modelRef.current.classify(myVideo.current);
+      const isNude = predictions.some(p => (p.className === 'Porn' || p.className === 'Hentai' || p.className === 'Sexy') && p.probability > 0.7);
+      
+      if (isNude) {
+        setMediaError('Xayiraad: Nudity laguma ogola!');
+        setStatusText('La mamnuucay: Nudity');
+        stream.getTracks().forEach(t => t.stop());
+        setStream(null);
+        socketRef.current?.disconnect();
+        alert('VIOLATION: Nudity laguma ogola barnaamijkan!');
+        return;
+      }
+
+      // Face Detection
+      if (faceModelLoaded.current) {
+        const detections = await faceapi.detectAllFaces(myVideo.current, new faceapi.TinyFaceDetectorOptions());
+        if (detections.length === 0 && videoEnabled) {
+          setStatusText('Fadlan tus wajigaaga...');
+        }
+      }
+    } catch (err) {
+      console.error('Moderation error:', err);
+    }
+  }, [stream, videoEnabled]);
+
+  useEffect(() => {
+    const itv = setInterval(checkModeration, 3000);
+    return () => clearInterval(itv);
+  }, [checkModeration]);
 
   useEffect(() => { initMedia(); }, [initMedia]);
 
@@ -180,21 +241,25 @@ function App() {
 
     socket.on('connect_error', (err) => {
       console.error('Socket Connection Error:', err);
-      // Check if it's a transport error or a specific browser block
-      const detail = err.description ? `${err.message} (${err.description})` : err.message;
-      setStatusText(`Server unreachable: ${detail}`);
+      setStatusText(`Error: Serverka lama heli karo`);
     });
 
-    socket.on('match_found', ({ peerId, initiator }) => {
+    socket.on('match_found', ({ peerId, initiator, peerName }) => {
       console.log('Match found with', peerId, 'initiator:', initiator);
       setIsMatched(true);
       isMatchedRef.current = true;
       setPeerId(peerId);
       peerIdRef.current = peerId;
       setIsInitiator(initiator);
-      setStatusText('Bridging networks...');
+      setRemoteName(peerName || 'Shisheeye');
+      setStatusText('Iskuxidhaaya...');
       setupPC(peerId, initiator);
+      
+      // Share our name immediately
+      socket.emit('set_name', userName);
     });
+
+    socket.on('update_remote_name', (name) => setRemoteName(name));
 
     socket.on('signal', async ({ signal, peerId: fromId }) => {
       if (fromId !== peerIdRef.current || !pcRef.current) return;
@@ -233,8 +298,18 @@ function App() {
       setMessages(prev => [...prev, { text: message, sent: false }]);
     });
 
+    socket.on('peer_media_state', ({ audio, video }) => {
+      setRemoteMuted(!audio);
+      setRemoteVideoOff(!video);
+    });
+
+    socket.on('receive_friend_request', ({ fromName }) => {
+      alert(`${fromName} wuxuu kuu soo diray codsi saaxiibtinimo!`);
+    });
+
     socket.on('peer_disconnected', () => {
       console.log('Peer disconnected');
+      setRemoteName('');
       findMatch();
     });
     socket.on('disconnect', () => {
@@ -327,30 +402,36 @@ function App() {
 
       <div className="video-container">
         <div className="video-wrapper glass">
-          <video playsInline muted ref={myVideo} autoPlay />
-          <div className="video-label">You</div>
-          {!videoEnabled && <div className="video-off-overlay"><VideoOff size={48} color="rgba(255,255,255,0.1)" /></div>}
-          {mediaError && <div className="video-off-overlay"><button className="btn btn-primary btn-sm" onClick={initMedia}><RefreshCw size={14} /> Retry Cam</button></div>}
+          <video playsInline muted ref={myVideo} autoPlay className={`f-${beautyFilter}`} />
+          <div className="video-label">{userName || 'Adiga'}</div>
+          {mediaError && <div className="video-off-overlay"><button className="btn btn-primary btn-sm" onClick={initMedia}><RefreshCw size={14} /> Isku day mar kale</button></div>}
         </div>
         <div className="video-wrapper glass">
           <video playsInline ref={remoteVideo} autoPlay />
-          {!remoteStream && <div className="video-placeholder">{isMatched ? 'Opening Secure Tunnel...' : 'Waiting for a stranger...'}</div>}
+          {!remoteStream && <div className="video-placeholder">{isMatched ? 'Iskuxidhaaya xaqiiqo...' : 'Sugaya qof shisheeye ah...'}</div>}
+          <div className="state-badge">
+             {remoteMuted && <div className="badge-pill">Afka waa xiran yahay</div>}
+             {remoteVideoOff && <div className="badge-pill">Kamarada waa xiran tahay</div>}
+          </div>
           {remoteNeedsPlay && (
             <div className="video-off-overlay" onClick={() => { remoteVideo.current.play(); setRemoteNeedsPlay(false); }} style={{ background: 'rgba(0,0,0,0.8)', cursor: 'pointer' }}>
-              <button className="btn btn-primary"><Play size={20} /> Tap to Start Video</button>
+              <button className="btn btn-primary"><Play size={20} /> Bilow Video-ga</button>
             </div>
           )}
-          <div className="video-label">Stranger</div>
+          <div className="video-label">
+            {remoteName}
+            {isMatched && <button className="btn btn-sm" style={{ padding: '4px 8px', marginLeft: '10px', fontSize: '0.6rem', background: 'rgba(255,255,255,0.1)' }} onClick={() => socketRef.current?.emit('friend_request')}>+ Saaxiib</button>}
+          </div>
         </div>
       </div>
 
-      <div className="chat-panel glass">
+      <div className={`chat-panel glass ${isChatOpen ? 'active' : ''}`}>
         <div className="chat-messages">
-          {messages.length === 0 && !isMatched && <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}><Info size={24} style={{ marginBottom: '8px' }} /><p>Match with anyone!</p></div>}
+          {messages.length === 0 && !isMatched && <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}><Info size={24} style={{ marginBottom: '8px' }} /><p>Cid kasta la sheekayso!</p></div>}
           {messages.map((msg, i) => <div key={i} className={`message ${msg.sent ? 'sent' : 'received'}`}>{msg.text}</div>)}
         </div>
         <form className="chat-input" onSubmit={sendMessage}>
-          <input type="text" placeholder={isMatched ? "Say hi..." : "Waiting..."} value={inputText} onChange={(e) => setInputText(e.target.value)} disabled={!isMatched} />
+          <input type="text" placeholder={isMatched ? "Qor halkan..." : "Sugaya..."} value={inputText} onChange={(e) => setInputText(e.target.value)} disabled={!isMatched} />
           <button type="submit" className="btn btn-primary" style={{ padding: '8px' }} disabled={!isMatched}><MessageCircle size={18} /></button>
         </form>
       </div>
@@ -366,11 +447,68 @@ function App() {
       {activeGame === 'ttt' && <TicTacToe socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
       {activeGame === 'rps' && <RPS socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
 
+      {showNameInput && (
+        <div className="game-overlay glass" style={{ maxWidth: '300px', padding: '30px' }}>
+          <h3 style={{ marginTop: 0 }}>Gali Magacaaga</h3>
+          <input 
+            type="text" 
+            className="chat-input" 
+            style={{ width: '100%', marginBottom: '15px', color: '#fff' }} 
+            placeholder="Magacaaga halkan ku qor..." 
+            value={userName} 
+            onChange={(e) => setUserName(e.target.value)} 
+          />
+          <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => {
+            if (userName.trim()) {
+              localStorage.setItem('ls_name', userName);
+              setShowNameInput(false);
+              socketRef.current?.emit('set_name', userName);
+            }
+          }}>BILOW</button>
+        </div>
+      )}
+
       <div className="controls glass">
-        <button className={`btn ${audioEnabled ? 'btn-primary' : 'btn-danger'}`} onClick={() => { if (stream?.getAudioTracks) { stream.getAudioTracks()[0].enabled = !audioEnabled; setAudioEnabled(!audioEnabled); } }} style={{ padding: '12px' }}>{audioEnabled ? <Mic size={20} /> : <MicOff size={20} />}</button>
-        <button className={`btn ${videoEnabled ? 'btn-primary' : 'btn-danger'}`} onClick={() => { if (stream?.getVideoTracks) { stream.getVideoTracks()[0].enabled = !videoEnabled; setVideoEnabled(!videoEnabled); } }} style={{ padding: '12px' }}>{videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}</button>
-        <button className="btn btn-primary" onClick={findMatch} style={{ background: 'linear-gradient(135deg, #FFB75E 0%, #ED8F03 100%)', padding: '12px 24px' }}><SkipForward size={20} /> Next</button>
+        <button className={`btn ${audioEnabled ? 'btn-primary' : 'btn-danger'}`} onClick={() => { 
+          if (stream?.getAudioTracks) { 
+            const newState = !audioEnabled;
+            stream.getAudioTracks()[0].enabled = newState; 
+            setAudioEnabled(newState); 
+            socketRef.current?.emit('media_state', { audio: newState, video: videoEnabled });
+          } 
+        }}>{audioEnabled ? <Mic size={20} /> : <MicOff size={20} />}</button>
+        
+        <button className={`btn ${videoEnabled ? 'btn-primary' : 'btn-danger'}`} onClick={() => { 
+          if (stream?.getVideoTracks) { 
+            const newState = !videoEnabled;
+            stream.getVideoTracks()[0].enabled = newState; 
+            setVideoEnabled(newState); 
+            socketRef.current?.emit('media_state', { audio: audioEnabled, video: newState });
+          } 
+        }}>{videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}</button>
+        
+        <div className="filter-shelf">
+          {['none', 'nuru', 'diirran', 'soft'].map(f => (
+            <button key={f} className={`filter-dot ${beautyFilter === f ? 'active' : ''}`} onClick={() => setBeautyFilter(f)} title={f} />
+          ))}
+        </div>
+
+        <button className="btn btn-primary" onClick={findMatch} style={{ background: 'linear-gradient(135deg, #FFB75E 0%, #ED8F03 100%)' }}><SkipForward size={20} /> Xiga</button>
       </div>
+
+      <button className="chat-toggle-btn btn btn-icon btn-primary" style={{ display: 'none' }} onClick={() => setIsChatOpen(!isChatOpen)}>
+        <MessageCircle size={24} />
+      </button>
+
+      <style>{`
+        .filter-shelf { display: flex; gap: 8px; background: rgba(0,0,0,0.3); padding: 5px 15px; border-radius: 100px; }
+        .filter-dot { width: 24px; height: 24px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.2); cursor: pointer; transition: 0.2s; }
+        .filter-dot.active { border-color: #fff; transform: scale(1.2); }
+        .filter-dot:nth-child(1) { background: #eee; }
+        .filter-dot:nth-child(2) { background: #fee2e2; }
+        .filter-dot:nth-child(3) { background: #ffedd5; }
+        .filter-dot:nth-child(4) { background: #f3e8ff; }
+      `}</style>
     </div>
   );
 }
