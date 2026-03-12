@@ -148,7 +148,6 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
         let boxClass = 'ludo-cell';
         let isPath = false;
         let star = false;
-        let colorZone = null;
 
         // Identify regions
         if (row < 6 && col < 6) boxClass += ' home-box red-area';
@@ -161,21 +160,20 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
           isPath = true;
 
           // Mark colored home paths
-          if (row === 7 && col > 0 && col < 6) { boxClass += ' path-red'; colorZone = 'red'; }
-          if (row === 7 && col > 8 && col < 14) { boxClass += ' path-yellow'; colorZone = 'yellow'; }
-          if (col === 7 && row > 0 && row < 6) { boxClass += ' path-green'; colorZone = 'green'; }
-          if (col === 7 && row > 8 && row < 14) { boxClass += ' path-blue'; colorZone = 'blue'; }
+          if (row === 7 && col > 0 && col < 6) boxClass += ' path-red';
+          if (row === 7 && col > 8 && col < 14) boxClass += ' path-yellow';
+          if (col === 7 && row > 0 && row < 6) boxClass += ' path-green';
+          if (col === 7 && row > 8 && row < 14) boxClass += ' path-blue';
 
-          // Mark start cells and safe stars manually based on standard Ludo board
-          if (row === 6 && col === 1) { boxClass += ' dark-red'; star = true; } // Red start
-          if (row === 1 && col === 8) { boxClass += ' dark-green'; star = true; } // Green start
-          if (row === 8 && col === 13) { boxClass += ' dark-yellow'; star = true; } // Yellow start
-          if (row === 13 && col === 6) { boxClass += ' dark-blue'; star = true; } // Blue start
+          // Standard Ludo Star Star Placements
+          if ((row === 6 && col === 1) || (row === 1 && col === 8) || (row === 8 && col === 13) || (row === 13 && col === 6)) {
+              boxClass += ` dark-${(row===6&&col===1)?'red':(row===1&&col===8)?'green':(row===8&&col===13)?'yellow':'blue'}`;
+              star = true;
+          }
           
-          if (row === 2 && col === 6) star = true;
-          if (row === 6 && col === 12) star = true;
-          if (row === 12 && col === 8) star = true;
-          if (row === 8 && col === 2) star = true;
+          if ((row === 2 && col === 6) || (row === 6 && col === 12) || (row === 12 && col === 8) || (row === 8 && col === 2)) {
+              star = true;
+          }
         }
 
         cells.push(
@@ -190,25 +188,21 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
   };
 
   // Very complex coordinate mapping for standard Ludo track
-  // [0..51] global path mapping to (row, col)
   const GLOBAL_PATH_COORDS = [
-    [6,1], [6,2], [6,3], [6,4], [6,5], // 0-4
-    [5,6], [4,6], [3,6], [2,6], [1,6], [0,6], // 5-10
-    [0,7], // 11
-    [0,8], [1,8], [2,8], [3,8], [4,8], [5,8], // 12-17
-    [6,9], [6,10], [6,11], [6,12], [6,13], [6,14], // 18-23
-    [7,14], // 24
-    [8,14], [8,13], [8,12], [8,11], [8,10], [8,9], // 25-30
-    [9,8], [10,8], [11,8], [12,8], [13,8], [14,8], // 31-36
-    [14,7], // 37
-    [14,6], [13,6], [12,6], [11,6], [10,6], [9,6], // 38-43
-    [8,5], [8,4], [8,3], [8,2], [8,1], [8,0], // 44-49
-    [7,0] // 50-51... note 0 is start of red. 
+    [6,1], [6,2], [6,3], [6,4], [6,5], // Red start & path
+    [5,6], [4,6], [3,6], [2,6], [1,6], [0,6], // Up to Green
+    [0,7], // Pivot
+    [0,8], [1,8], [2,8], [3,8], [4,8], [5,8], // Down to Yellow
+    [6,9], [6,10], [6,11], [6,12], [6,13], [6,14], // Right to Yellow
+    [7,14], // Pivot
+    [8,14], [8,13], [8,12], [8,11], [8,10], [8,9], // Left to Blue
+    [9,8], [10,8], [11,8], [12,8], [13,8], [14,8], // Up to Blue
+    [14,7], // Pivot
+    [14,6], [13,6], [12,6], [11,6], [10,6], [9,6], // Down to Red
+    [8,5], [8,4], [8,3], [8,2], [8,1], [8,0], // Left to Red base
+    [7,0] // Final Pivot
   ];
-  // add the final connecting block
-  GLOBAL_PATH_COORDS.push([7,0]); // 51
 
-  // Map local pos > 51 (Home runs)
   const HOME_COORDS = {
     red:    [[7,1], [7,2], [7,3], [7,4], [7,5]],
     green:  [[1,7], [2,7], [3,7], [4,7], [5,7]],
@@ -221,12 +215,14 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
     COLORS.forEach(color => {
       positions[color].forEach((pos, idx) => {
         let pr, pc;
-        if (pos === -1) {
-          // Skip base rendering here, handled separately
-        } else if (pos >= 0 && pos < PATH_LENGTH) {
+        if (pos === -1) return;
+        
+        if (pos >= 0 && pos < PATH_LENGTH) {
           let gPos = getGlobalPos(color, pos);
-          pr = GLOBAL_PATH_COORDS[gPos][0];
-          pc = GLOBAL_PATH_COORDS[gPos][1];
+          if (gPos !== null) {
+              pr = GLOBAL_PATH_COORDS[gPos][0];
+              pc = GLOBAL_PATH_COORDS[gPos][1];
+          }
         } else if (pos >= PATH_LENGTH && pos < PATH_LENGTH + HOME_LENGTH) {
           let hPos = pos - PATH_LENGTH;
           pr = HOME_COORDS[color][hPos][0];
@@ -271,24 +267,25 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
   return (
     <div className="game-overlay ls-window glass">
       <button className="close-btn" onClick={onDispose}>✕</button>
+      
       <div className="ls-header">
-        <h2 style={{margin: 0, color: 'var(--accent-primary)'}}>LUDO STAR CLASH</h2>
+        <h2 style={{margin: 0, color: '#fff', fontSize: '1.2rem'}}>👑 LUDO STAR</h2>
         <div className="ls-players-hud">
-           <div className={`ls-hud-pill ${turn === 'red' ? 'active-turn red' : ''}`}>RED (P1)</div>
-           <div className={`ls-hud-pill ${turn === 'yellow' ? 'active-turn yellow' : ''}`}>YELLOW (P2)</div>
+           <div className={`ls-hud-pill ${turn === 'red' ? 'active-turn red' : ''}`}>YOU (RED)</div>
+           <div className={`ls-hud-pill ${turn === 'yellow' ? 'active-turn yellow' : ''}`}>THEM (YELLOW)</div>
         </div>
       </div>
 
       <div className="ls-main">
         {/* DICE SECTION */}
         <div className="ls-sidebar">
-          <div className={`ls-dice-box ${(isMyTurn && !hasRolled) ? 'shake-ready' : ''}`} onClick={rollDice} style={{ cursor: (!hasRolled && isMyTurn) ? 'pointer' : 'default', opacity: (!hasRolled && isMyTurn) ? 1 : 0.8 }}>
+          <div className={`ls-dice-box ${(isMyTurn && !hasRolled) ? 'shake-ready' : ''}`} onClick={rollDice} style={{ cursor: (!hasRolled && isMyTurn) ? 'pointer' : 'default', opacity: (isMyTurn) ? 1 : 0.6 }}>
             <div className={`ls-dice-val ${hasRolled ? 'rolled-pop' : ''}`}>
-              {diceRoll ? getDiceFace(diceRoll) : '🎲'}
+              {diceRoll ? getDiceFace(diceRoll) : (isMyTurn ? '🎲' : '⏳')}
             </div>
-            <div className="ls-dice-lbl">{isMyTurn ? (hasRolled ? "MOVE NOW" : "TAP TO ROLL") : "OPPONENT..."}</div>
+            <div className="ls-dice-lbl">{isMyTurn ? (hasRolled ? "MOVE PIECE" : "TAP TO ROLL") : "WAITING..."}</div>
           </div>
-          <div className="ls-logs">
+          <div className="ls-logs glass">
              {logs.map((l, i) => <div key={i} className="ls-log-line">{l}</div>)}
           </div>
         </div>
@@ -298,26 +295,23 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
           <div className="ls-board">
             {renderGrid()}
 
-            {/* Overlaid Base Boxes to contain the absolute positioned base pawns */}
-            <div className="ls-base-overlay top-left red-area">
+            {/* Base Overlays */}
+            <div className="ls-base-overlay top-left">
                <div className="ls-base-whitebox">{renderBasePawns('red')}</div>
             </div>
-            <div className="ls-base-overlay top-right green-area">
+            <div className="ls-base-overlay top-right">
                <div className="ls-base-whitebox">{renderBasePawns('green')}</div>
             </div>
-            <div className="ls-base-overlay bottom-left blue-area">
+            <div className="ls-base-overlay bottom-left">
                <div className="ls-base-whitebox">{renderBasePawns('blue')}</div>
             </div>
-            <div className="ls-base-overlay bottom-right yellow-area">
+            <div className="ls-base-overlay bottom-right">
                <div className="ls-base-whitebox">{renderBasePawns('yellow')}</div>
             </div>
             
-            {/* Center Triangle Art */}
+            {/* Center Art */}
             <div className="ls-center-art">
-               <div className="ls-tri ls-tri-top"></div>
-               <div className="ls-tri ls-tri-right"></div>
-               <div className="ls-tri ls-tri-bottom"></div>
-               <div className="ls-tri ls-tri-left"></div>
+               <div className="ls-center-star">★</div>
             </div>
           </div>
         </div>
@@ -327,3 +321,4 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
 };
 
 export default Ludo;
+

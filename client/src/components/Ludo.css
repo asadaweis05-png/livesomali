@@ -1,20 +1,31 @@
-/* Ludo.css - Authentic Ludo Star Replica */
+/* Ludo.css - OFFICIAL LUDO STAR REPLICA DESIGN */
 
 .ls-window {
   display: flex !important;
   flex-direction: column;
-  background: rgba(15, 15, 20, 0.98) !important;
-  border: 1px solid rgba(255,255,255,0.1) !important;
-  max-width: 800px;
-  max-height: 95vh;
-  padding: 20px;
+  background: radial-gradient(circle at center, #2c1e12 0%, #1a0f06 100%) !important; /* Polished Wood Feel */
+  border: 4px solid #4a3728 !important;
+  max-width: 900px;
+  max-height: 98vh;
+  padding: 15px;
+  border-radius: 30px !important;
+  box-shadow: 0 20px 80px rgba(0,0,0,0.8), inset 0 0 100px rgba(0,0,0,0.5) !important;
+  overflow: hidden;
 }
 
 .ls-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 15px;
+  padding: 0 10px;
+}
+
+.ls-header h2 {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 800;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    letter-spacing: 2px;
 }
 
 .ls-players-hud {
@@ -23,113 +34,92 @@
 }
 
 .ls-hud-pill {
-  padding: 6px 16px;
-  border-radius: 20px;
-  font-weight: 700;
-  font-size: 0.85rem;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  opacity: 0.5;
-  transition: all 0.3s ease;
+  padding: 8px 20px;
+  border-radius: 50px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  background: rgba(0,0,0,0.4);
+  border: 2px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.4);
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .ls-hud-pill.active-turn {
-  opacity: 1;
-  transform: scale(1.05);
-  box-shadow: 0 0 15px rgba(255,255,255,0.2);
+  color: #fff;
+  transform: scale(1.1);
+  box-shadow: 0 0 20px rgba(255,255,255,0.2);
+  border-color: #fff;
 }
 
-.ls-hud-pill.active-turn.red { border-color: #ef4444; background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
-.ls-hud-pill.active-turn.yellow { border-color: #eab308; background: rgba(234, 179, 8, 0.2); color: #fde047; }
+.ls-hud-pill.active-turn.red { background: #ef4444; box-shadow: 0 0 25px rgba(239, 68, 68, 0.6); }
+.ls-hud-pill.active-turn.yellow { background: #eab308; box-shadow: 0 0 25px rgba(234, 179, 8, 0.6); }
 
 .ls-main {
   display: flex;
-  gap: 30px;
+  gap: 20px;
   flex: 1;
+  width: 100%;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 850px) {
   .ls-main { flex-direction: column-reverse; align-items: center; }
-  .ls-sidebar { width: 100%; flex-direction: row !important; justify-content: center; }
+  .ls-sidebar { width: 100%; flex-direction: row !important; align-items: center; justify-content: center; height: auto !important; }
   .ls-logs { display: none !important; }
+  .ls-board-container { width: 95vw !important; }
 }
 
 .ls-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  width: 150px;
+  gap: 15px;
+  width: 180px;
+  height: 100%;
 }
 
 .ls-dice-box {
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 16px;
+  background: linear-gradient(135deg, #3d2b1f 0%, #261a12 100%);
+  border: 3px solid #5c4033;
+  border-radius: 24px;
   padding: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  transition: all 0.2s;
-}
-
-.ls-dice-box:hover {
-  background: rgba(255,255,255,0.08);
+  gap: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  transition: transform 0.2s;
 }
 
 .ls-dice-val {
-  font-size: 4rem;
-  font-weight: bold;
-  text-shadow: 0 4px 15px rgba(0,0,0,0.5);
-  line-height: 1;
-  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.shake-ready .ls-dice-val {
-  animation: diceShake 0.5s infinite;
-}
-
-.rolled-pop {
-  animation: dicePop 0.3s ease-out;
-}
-
-@keyframes diceShake {
-  0% { transform: rotate(0deg); }
-  25% { transform: rotate(10deg); }
-  50% { transform: rotate(0deg); }
-  75% { transform: rotate(-10deg); }
-  100% { transform: rotate(0deg); }
-}
-
-@keyframes dicePop {
-  0% { transform: scale(0.5); opacity: 0; }
-  100% { transform: scale(1); opacity: 1; }
+  font-size: 5rem;
+  text-shadow: 0 5px 15px rgba(0,0,0,0.8);
+  filter: drop-shadow(0 0 10px rgba(255,255,255,0.2));
 }
 
 .ls-dice-lbl {
-  font-size: 0.8rem;
-  font-weight: bold;
-  letter-spacing: 2px;
-  color: #10b981;
+  font-size: 0.85rem;
+  font-weight: 900;
+  letter-spacing: 1px;
+  color: #fbbf24;
 }
 
 .ls-logs {
-  background: rgba(0,0,0,0.5);
-  border-radius: 12px;
-  padding: 10px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 20px;
+  padding: 15px;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  overflow: hidden;
+  gap: 8px;
+  border: 1px solid rgba(255,255,255,0.05);
 }
 
 .ls-log-line {
-  font-size: 0.75rem;
-  color: rgba(255,255,255,0.6);
-  padding: 4px 8px;
-  background: rgba(255,255,255,0.05);
-  border-radius: 6px;
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.7);
+  background: rgba(255,255,255,0.03);
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-weight: 500;
 }
 
 /* AUTHENTIC 15x15 BOARD CSS */
@@ -138,20 +128,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 10px;
 }
 
 .ls-board {
   width: 100%;
-  max-width: 500px;
   aspect-ratio: 1/1;
   background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+  border-radius: 12px;
+  box-shadow: 0 15px 50px rgba(0,0,0,0.9);
   display: grid;
   grid-template-columns: repeat(15, 1fr);
   grid-template-rows: repeat(15, 1fr);
   position: relative;
-  border: 4px solid #333;
+  border: 8px solid #2c1a0c;
+  overflow: hidden;
 }
 
 .ludo-cell {
@@ -163,54 +154,91 @@
 }
 
 .track-cell {
-  border: 1px solid rgba(0,0,0,0.1);
+  border: 1px solid rgba(0,0,0,0.15);
+  background: #fdfdfd;
 }
 
 /* Star styling */
 .star-icon {
-  font-size: 1.5rem;
-  color: #fcd34d;
-  opacity: 0.8;
+  font-size: 1.8rem;
+  color: #eab308;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3));
   z-index: 1;
+  font-weight: 900;
 }
 
 /* Home Boxes (Corners) */
 .home-box { border: none; }
-.red-area { background-color: #ef4444; }
-.green-area { background-color: #22c55e; }
-.blue-area { background-color: #3b82f6; }
-.yellow-area { background-color: #eab308; }
+.red-area { background: linear-gradient(135deg, #ef4444 0%, #991b1b 100%); }
+.green-area { background: linear-gradient(135deg, #22c55e 0%, #14532d 100%); }
+.blue-area { background: linear-gradient(135deg, #3b82f6 0%, #1e3a8a 100%); }
+.yellow-area { background: linear-gradient(135deg, #eab308 0%, #854d0e 100%); }
 
-/* Safe Home Paths */
-.path-red { background-color: #fca5a5; }
-.path-green { background-color: #86efac; }
-.path-blue { background-color: #93c5fd; }
-.path-yellow { background-color: #fde047; }
+/* Home Paths */
+.path-red { background: #fca5a5; position: relative; }
+.path-green { background: #86efac; position: relative; }
+.path-blue { background: #93c5fd; position: relative; }
+.path-yellow { background: #fde047; position: relative; }
 
-/* Starting dark blocks */
-.dark-red { background-color: #dc2626; }
-.dark-green { background-color: #16a34a; }
-.dark-blue { background-color: #2563eb; }
-.dark-yellow { background-color: #ca8a04; }
+/* Dark starting points */
+.dark-red { background-color: #ef4444 !important; border: 2px solid rgba(0,0,0,0.2) !important; }
+.dark-green { background-color: #22c55e !important; border: 2px solid rgba(0,0,0,0.2) !important; }
+.dark-blue { background-color: #3b82f6 !important; border: 2px solid rgba(0,0,0,0.2) !important; }
+.dark-yellow { background-color: #eab308 !important; border: 2px solid rgba(0,0,0,0.2) !important; }
 
-/* Center Graphic (4 triangles) */
-.center-home { background: transparent; }
-
-.ls-center-art {
+/* PAWNS - THE PIN DESIGN */
+.ls-pawn {
+  width: 85%;
+  height: 85%;
+  border-radius: 50% 50% 50% 10%; /* Teardrop Pin Shape */
+  transform: rotate(-45deg);
   position: absolute;
-  top: 40%;
-  left: 40%;
-  width: 20%;
-  height: 20%;
-  overflow: hidden;
-  z-index: 2;
+  z-index: 20;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 
+    -2px 2px 4px rgba(0,0,0,0.5),
+    inset -3px 3px 6px rgba(255,255,255,0.4),
+    inset 3px -3px 6px rgba(0,0,0,0.4);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255,255,255,0.2);
 }
 
-.ls-tri { position: absolute; width: 0; height: 0; }
-.ls-tri-bottom { border-left: 10% solid transparent; border-right: 10% solid transparent; border-bottom: 10% solid #ef4444; bottom: 0; left: 0; }
-.ls-tri-top { border-left: 10% solid transparent; border-right: 10% solid transparent; border-top: 10% solid #eab308; top: 0; left: 0; }
+.ls-pawn::after {
+  content: "";
+  width: 50%;
+  height: 50%;
+  background: rgba(255,255,255,0.3);
+  border-radius: 50%;
+  transform: rotate(45deg);
+  box-shadow: 0 0 10px rgba(255,255,255,0.5);
+}
 
-/* Absolute Home Overlays to contain pawns simply */
+.ls-pawn.in-base {
+  position: relative;
+  width: 80%;
+  height: 80%;
+}
+
+.ls-red { background: #ef4444; border-color: #991b1b; }
+.ls-blue { background: #3b82f6; border-color: #1e3a8a; }
+.ls-green { background: #22c55e; border-color: #14532d; }
+.ls-yellow { background: #eab308; border-color: #854d0e; }
+
+.ls-pawn.mine:not(.in-base) {
+  animation: pawnFloat 2s infinite ease-in-out;
+  border-color: #fff;
+  z-index: 30;
+}
+
+@keyframes pawnFloat {
+  0%, 100% { transform: translate(0, 0) rotate(-45deg) scale(1.1); filter: brightness(1); }
+  50% { transform: translate(0, -6px) rotate(-45deg) scale(1.1); filter: brightness(1.2); }
+}
+
+/* Base Overlays with White Parking Spots */
 .ls-base-overlay {
   position: absolute;
   width: 40%;
@@ -220,55 +248,19 @@
   justify-content: center;
   z-index: 5;
 }
-.ls-base-overlay.top-left { top: 0; left: 0; }
-.ls-base-overlay.top-right { top: 0; right: 0; }
-.ls-base-overlay.bottom-left { bottom: 0; left: 0; }
-.ls-base-overlay.bottom-right { bottom: 0; right: 0; }
 
 .ls-base-whitebox {
-  width: 60%;
-  height: 60%;
+  width: 75%;
+  height: 75%;
   background: white;
   border-radius: 20px;
-  padding: 10%;
-  box-shadow: inset 0 0 10px rgba(0,0,0,0.2);
+  padding: 12%;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.3), inset 0 0 15px rgba(0,0,0,0.2);
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
+  gap: 15px;
   place-items: center;
-}
-
-/* PAWNS */
-.ls-pawn {
-  width: 75%;
-  height: 75%;
-  border-radius: 50%;
-  position: absolute;
-  z-index: 10;
-  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 
-    inset -4px -4px 8px rgba(0,0,0,0.4), 
-    inset 4px 4px 8px rgba(255,255,255,0.4),
-    0 4px 10px rgba(0,0,0,0.5);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ls-pawn::after {
-  content: "";
-  width: 40%;
-  height: 40%;
-  background: rgba(255,255,255,0.2);
-  border-radius: 50%;
-  border: 1px solid rgba(255,255,255,0.3);
-}
-
-.ls-pawn.in-base {
-  position: relative;
-  width: 100%;
-  height: 100%;
 }
 
 .ls-pawn-empty {
@@ -276,34 +268,46 @@
   height: 100%;
   border-radius: 50%;
   background: rgba(0,0,0,0.05);
-  box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);
+  box-shadow: inset 0 3px 6px rgba(0,0,0,0.1);
+  border: 1px dashed rgba(0,0,0,0.1);
 }
 
-.ls-red { background: radial-gradient(circle at 30% 30%, #f87171, #991b1b); border: 2px solid #7f1d1d; }
-.ls-blue { background: radial-gradient(circle at 30% 30%, #60a5fa, #1e3a8a); border: 2px solid #1e3a8a; }
-.ls-green { background: radial-gradient(circle at 30% 30%, #4ade80, #14532d); border: 2px solid #14532d; }
-.ls-yellow { background: radial-gradient(circle at 30% 30%, #fde047, #a16207); border: 2px solid #854d0e; }
+/* Center Crown Zone */
+.center-home { background: #fff !important; }
 
-.ls-pawn.mine:not(.in-base) {
-  animation: pawnBounce 1.5s infinite;
-}
-.ls-pawn.mine.in-base:hover {
-  transform: scale(1.1);
-}
-
-@keyframes pawnBounce {
-  0%, 100% { transform: translateY(0) scale(1.1); }
-  50% { transform: translateY(-3px) scale(1.1); }
-}
-
-/* Handling multiple pawns in one cell nicely */
-.pawn-cluster {
+.ls-center-art {
   position: absolute;
-  inset: 0;
+  top: 40%;
+  left: 40%;
+  width: 20%;
+  height: 20%;
+  z-index: 10;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
+  background: #fff;
+  box-shadow: 0 0 20px rgba(0,0,0,0.1);
 }
-.pawn-cluster.n2 .ls-pawn { width: 45%; height: 45%; position: relative; margin: 2px; }
-.pawn-cluster.n3 .ls-pawn, .pawn-cluster.n4 .ls-pawn { width: 35%; height: 35%; position: relative; margin: 1px; }
+
+.ls-center-star {
+  font-size: 2.5rem;
+  color: #eab308;
+  filter: drop-shadow(0 0 10px rgba(234, 179, 8, 0.4));
+  animation: starRotate 10s infinite linear;
+}
+
+@keyframes starRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Improved Dice Pop */
+@keyframes dicePop {
+  0% { transform: scale(0.2) rotate(-90deg); opacity: 0; }
+  60% { transform: scale(1.2) rotate(10deg); }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+.rolled-pop {
+  animation: dicePop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
