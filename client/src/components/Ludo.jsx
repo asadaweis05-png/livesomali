@@ -128,11 +128,16 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
     if (diceRoll === 6 || hitOpponent) {
       setHasRolled(false);
       setDiceRoll(null);
-      addLog(`Extra turn!`);
+      addLog(`Extra roll!`);
       socket.emit('game_action', { action: 'move', positions: newPositions, nextTurn: myColor, color: myColor });
     } else {
       passTurn(newPositions);
     }
+  };
+
+  const getDiceFace = (val) => {
+    const faces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+    return faces[val - 1] || '🎲';
   };
 
   // Rendering logic for a complex 15x15 grid
@@ -277,9 +282,11 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
       <div className="ls-main">
         {/* DICE SECTION */}
         <div className="ls-sidebar">
-          <div className="ls-dice-box" onClick={rollDice} style={{ cursor: (!hasRolled && isMyTurn) ? 'pointer' : 'default', opacity: (!hasRolled && isMyTurn) ? 1 : 0.5 }}>
-            <div className="ls-dice-val">{diceRoll || '🎲'}</div>
-            <div className="ls-dice-lbl">{isMyTurn ? "ROLL" : "WAIT"}</div>
+          <div className={`ls-dice-box ${(isMyTurn && !hasRolled) ? 'shake-ready' : ''}`} onClick={rollDice} style={{ cursor: (!hasRolled && isMyTurn) ? 'pointer' : 'default', opacity: (!hasRolled && isMyTurn) ? 1 : 0.8 }}>
+            <div className={`ls-dice-val ${hasRolled ? 'rolled-pop' : ''}`}>
+              {diceRoll ? getDiceFace(diceRoll) : '🎲'}
+            </div>
+            <div className="ls-dice-lbl">{isMyTurn ? (hasRolled ? "MOVE NOW" : "TAP TO ROLL") : "OPPONENT..."}</div>
           </div>
           <div className="ls-logs">
              {logs.map((l, i) => <div key={i} className="ls-log-line">{l}</div>)}
