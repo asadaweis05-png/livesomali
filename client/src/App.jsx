@@ -74,6 +74,7 @@ function App() {
   const [currentView, setCurrentView] = useState('chat'); // chat, games, messages, profile, favorites, settings
   const [reactions, setReactions] = useState([]); // {id, emoji, x, y}
   const [swipeStart, setSwipeStart] = useState(null);
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
 
 
   const socketRef = useRef(null);
@@ -383,6 +384,7 @@ function App() {
 
     socket.on('receive_message', ({ message }) => {
       setMessages(prev => [...prev, { text: message, sent: false }]);
+      if (!isChatOpen) setHasUnreadMessages(true);
     });
 
     socket.on('peer_media_state', ({ audio, video }) => {
@@ -693,8 +695,9 @@ function App() {
            <img src="https://image2url.com/r2/default/images/1773292582841-f5fb7cbb-311d-4bbc-8261-d9c6c6510101.png" alt="Chat" className="nav-logo-icon" />
           <span>Chat</span>
         </button>
-        <button onClick={() => setIsChatOpen(!isChatOpen)} className={isChatOpen ? 'active' : ''}>
+        <button onClick={() => { setIsChatOpen(!isChatOpen); setHasUnreadMessages(false); }} className={isChatOpen ? 'active' : ''} style={{ position: 'relative' }}>
           <Mail size={24} />
+          {hasUnreadMessages && <div className="unread-dot"></div>}
           <span>Inbox</span>
         </button>
         <button className={currentView === 'games' ? 'active' : ''} onClick={() => setCurrentView('games')}>
@@ -782,9 +785,16 @@ function App() {
         .settings-list { display: flex; flex-direction: column; gap: 15px; margin-top: 30px; }
         .settings-item { background: #222; padding: 15px 20px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #333; }
         
+        .unread-dot { position: absolute; top: 12px; right: 25%; width: 8px; height: 8px; background: #ff4d4d; border-radius: 50%; border: 2px solid #111; }
+
+        .view-overlay { position: fixed; inset: 0; background: #111; z-index: 200; padding: 60px 20px; display: flex; flex-direction: column; }
+        .game-overlay-ome { position: fixed; inset: 0; background: #000; z-index: 200; display: flex; flex-direction: column; }
+        .close-btn { position: absolute; top: 20px; right: 20px; background: none; border: none; color: #fff; cursor: pointer; z-index: 210; }
+
         @media (max-width: 900px) {
            .ome-chat-drawer { width: 100%; top: auto; height: 50vh; transform: translateY(100%); border-left: none; border-top: 1px solid #333; }
            .ome-chat-drawer.active { transform: translateY(0); }
+           .unread-dot { right: 35%; }
         }
       `}</style>
     </div>
