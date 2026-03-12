@@ -20,10 +20,13 @@ const INITIAL_POSITIONS = {
 
 const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
   const [positions, setPositions] = useState(INITIAL_POSITIONS);
+  const [visualPositions, setVisualPositions] = useState(INITIAL_POSITIONS);
   const [turn, setTurn] = useState('red');
   const [diceRoll, setDiceRoll] = useState(null);
+  const [isRolling, setIsRolling] = useState(false);
   const [hasRolled, setHasRolled] = useState(false);
   const [logs, setLogs] = useState([]);
+  const [animating, setAnimating] = useState(false);
 
   // For P2P duel, Initiative = Red, Receiver = Yellow (opposite ends)
   const myColor = isInitiator ? 'red' : 'yellow';
@@ -33,14 +36,10 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
     if (!socket) return;
     const handleAction = (data) => {
       if (data.action === 'roll') {
-        setDiceRoll(data.value);
-        setHasRolled(true);
-        addLog(`${data.color.toUpperCase()} rolled a ${data.value}`);
+        animateDice(data.value);
+        addLog(`${data.color.toUpperCase()} rolled.`);
       } else if (data.action === 'move') {
-        setPositions(data.positions);
-        setDiceRoll(null);
-        setHasRolled(false);
-        setTurn(data.nextTurn);
+        animateMove(data.color, data.from, data.to, data.positions, data.nextTurn, false);
         addLog(`${data.color.toUpperCase()} moved.`);
       }
     };
@@ -53,23 +52,38 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
   };
 
   const rollDice = () => {
-    if (!isMyTurn || hasRolled) return;
+    if (!isMyTurn || hasRolled || animating || isRolling) return;
     const val = Math.floor(Math.random() * 6) + 1;
-    setDiceRoll(val);
-    setHasRolled(true);
-    addLog(`You rolled ${val}`);
+    animateDice(val);
+    
+    socket.emit('game_action', { action: 'roll', value: val, color: myColor });
+  };
 
-    // Check if any moves are valid
+  const animateDice = (val) => {
+    setIsRolling(true);
+    let count = 0;
+    const itv = setInterval(() => {
+      setDiceRoll(Math.floor(Math.random() * 6) + 1);
+      count++;
+      if (count > 10) {
+        clearInterval(itv);
+        setDiceRoll(val);
+        setIsRolling(false);
+        setHasRolled(true);
+        checkValidMoves(val);
+      }
+    }, 50);
+  };
+
+  const checkValidMoves = (val) => {
     let possibleMove = false;
     positions[myColor].forEach(p => {
-      if (p === -1 && val === 6) possibleMove = true; // Can leave base
-      else if (p >= 0 && p + val <= PATH_LENGTH + HOME_LENGTH + 1) possibleMove = true; // Can move
+      if (p === -1 && val === 6) possibleMove = true;
+      else if (p >= 0 && p + val <= PATH_LENGTH + HOME_LENGTH) possibleMove = true;
     });
 
     if (!possibleMove) {
-      setTimeout(() => passTurn(positions), 1000); // Auto pass if completely stuck
-    } else {
-      socket.emit('game_action', { action: 'roll', value: val, color: myColor });
+      setTimeout(() => passTurn(positions), 1500);
     }
   };
 
@@ -86,8 +100,50 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
     return (localPos + OFFSETS[color]) % PATH_LENGTH;
   };
 
+  const animateMove = async (color, index, targetPos, finalPositions, nextTurn, isEmit = true) => {
+    setAnimating(true);
+    const startPos = positions[color][index];
+    
+    // Step by step hopping
+    let current = startPos;
+    
+    // Function to update visual state
+    const updateVisual = (color, index, pos) => {
+      setVisualPositions(prev => {
+        const next = { ...prev };
+        next[color] = [...next[color]];
+        next[color][index] = pos;
+        return next;
+      });
+    };
+
+    if (startPos === -1) {
+      // Exit base immediately
+      updateVisual(color, index, 0);
+      await new Promise(r => setTimeout(r, 200));
+    } else {
+      for (let i = startPos + 1; i <= targetPos; i++) {
+        updateVisual(color, index, i);
+        // "Hop" sound/delay
+        await new Promise(r => setTimeout(r, 150));
+      }
+    }
+
+    setPositions(finalPositions);
+    setVisualPositions(finalPositions); // Sync final accurately
+    
+    if (isEmit) {
+      socket.emit('game_action', { action: 'move', positions: finalPositions, nextTurn, color, from: startPos, to: targetPos });
+    }
+
+    setDiceRoll(null);
+    setHasRolled(false);
+    setTurn(nextTurn);
+    setAnimating(false);
+  };
+
   const movePawn = (index) => {
-    if (!isMyTurn || !hasRolled || !diceRoll) return;
+    if (!isMyTurn || !hasRolled || !diceRoll || animating) return;
 
     const currentLocalPos = positions[myColor][index];
     const newPositions = JSON.parse(JSON.stringify(positions));
@@ -95,11 +151,11 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
     let targetLocalPos = currentLocalPos;
 
     if (currentLocalPos === -1) {
-      if (diceRoll === 6) targetLocalPos = 0; // Exit base to start position
-      else return; // Invalid move
+      if (diceRoll === 6) targetLocalPos = 0;
+      else return;
     } else {
       targetLocalPos = currentLocalPos + diceRoll;
-      if (targetLocalPos > PATH_LENGTH + HOME_LENGTH) return; // Invalid move (overshot finish)
+      if (targetLocalPos > PATH_LENGTH + HOME_LENGTH) return;
     }
 
     newPositions[myColor][index] = targetLocalPos;
@@ -108,31 +164,20 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
     const targetGlobal = getGlobalPos(myColor, targetLocalPos);
 
     if (targetGlobal !== null && !SAFE_ZONES.includes(targetGlobal)) {
-      // Check for captures
       COLORS.forEach(c => {
         if (c !== myColor) {
           newPositions[c].forEach((oppLocalPos, i) => {
             if (getGlobalPos(c, oppLocalPos) === targetGlobal) {
-              newPositions[c][i] = -1; // Send back to base!
+              newPositions[c][i] = -1;
               hitOpponent = true;
-              addLog(`Captured ${c.toUpperCase()}!`);
             }
           });
         }
       });
     }
 
-    setPositions(newPositions);
-
-    // If 6 or hit opponent, play again. Else pass turn.
-    if (diceRoll === 6 || hitOpponent) {
-      setHasRolled(false);
-      setDiceRoll(null);
-      addLog(`Extra roll!`);
-      socket.emit('game_action', { action: 'move', positions: newPositions, nextTurn: myColor, color: myColor });
-    } else {
-      passTurn(newPositions);
-    }
+    const nextTurn = (diceRoll === 6 || hitOpponent) ? myColor : (myColor === 'red' ? 'yellow' : 'red');
+    animateMove(myColor, index, targetLocalPos, newPositions, nextTurn, true);
   };
 
   const getDiceFace = (val) => {
@@ -213,7 +258,7 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
   const renderPawnsAtGrid = (r, c) => {
     let pawns = [];
     COLORS.forEach(color => {
-      positions[color].forEach((pos, idx) => {
+      visualPositions[color].forEach((pos, idx) => {
         let pr, pc;
         if (pos === -1) return;
         
@@ -234,7 +279,7 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
           pawns.push(
             <div 
               key={`${color}-${idx}`} 
-              className={`ls-pawn ls-${color} ${isMine ? 'mine' : ''}`}
+              className={`ls-pawn ls-${color} ${isMine ? 'mine' : ''} ${animating ? 'ls-hopping' : ''}`}
               onClick={(e) => { e.stopPropagation(); if(isMine) movePawn(idx); }}
             />
           );
@@ -250,7 +295,7 @@ const Ludo = ({ socket, peerId, isInitiator, onDispose }) => {
 
   // Base Pawns
   const renderBasePawns = (color) => {
-    return positions[color].map((pos, idx) => {
+    return visualPositions[color].map((pos, idx) => {
       if (pos === -1) {
         return (
           <div 

@@ -318,7 +318,7 @@ function App() {
   };
 
   return (
-    <div className="app">
+    <div className={`app ${activeGame === 'ludo' ? 'ludo-mode' : ''}`}>
       <div className="status-badge">
         <div className={isMatched ? '' : 'pulse'}></div>
         {statusText}

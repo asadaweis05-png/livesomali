@@ -78,21 +78,32 @@
 
 .ls-dice-box {
   background: linear-gradient(135deg, #3d2b1f 0%, #261a12 100%);
-  border: 3px solid #5c4033;
-  border-radius: 24px;
-  padding: 20px;
+  border: 4px solid #eab308;
+  border-radius: 20px;
+  width: 100px;
+  height: 100px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-  transition: transform 0.2s;
+  justify-content: center;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 0 10px rgba(0,0,0,0.5);
+  transition: all 0.2s;
+  position: relative;
+  margin-top: auto;
+}
+
+.ls-dice-box.shake-ready {
+  border-color: #fff;
+  box-shadow: 0 0 20px rgba(255,255,255,0.3);
+  cursor: pointer;
 }
 
 .ls-dice-val {
   font-size: 5rem;
-  text-shadow: 0 5px 15px rgba(0,0,0,0.8);
-  filter: drop-shadow(0 0 10px rgba(255,255,255,0.2));
+  line-height: 1;
+  text-shadow: 0 5px 20px rgba(0,0,0,0.8);
+  filter: drop-shadow(0 0 10px rgba(255,255,255,0.3));
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .ls-dice-lbl {
@@ -133,15 +144,16 @@
 
 .ls-board {
   width: 100%;
+  max-width: 800px; /* Limit board size for desktop to keep it sharp */
   aspect-ratio: 1/1;
   background: #fff;
   border-radius: 12px;
-  box-shadow: 0 15px 50px rgba(0,0,0,0.9);
+  box-shadow: 0 30px 100px rgba(0,0,0,0.9);
   display: grid;
   grid-template-columns: repeat(15, 1fr);
   grid-template-rows: repeat(15, 1fr);
   position: relative;
-  border: 8px solid #2c1a0c;
+  border: 12px solid #2c1a0c;
   overflow: hidden;
 }
 
@@ -227,15 +239,14 @@
 .ls-green { background: #22c55e; border-color: #14532d; }
 .ls-yellow { background: #eab308; border-color: #854d0e; }
 
-.ls-pawn.mine:not(.in-base) {
-  animation: pawnFloat 2s infinite ease-in-out;
-  border-color: #fff;
-  z-index: 30;
+.ls-pawn.ls-hopping {
+  animation: pawnHop 0.15s ease-in-out;
 }
 
-@keyframes pawnFloat {
-  0%, 100% { transform: translate(0, 0) rotate(-45deg) scale(1.1); filter: brightness(1); }
-  50% { transform: translate(0, -6px) rotate(-45deg) scale(1.1); filter: brightness(1.2); }
+@keyframes pawnHop {
+  0% { transform: translateY(0) rotate(-45deg) scale(1.1); }
+  50% { transform: translateY(-20px) rotate(-45deg) scale(1.3); }
+  100% { transform: translateY(0) rotate(-45deg) scale(1.1); }
 }
 
 /* Base Overlays with White Parking Spots */
