@@ -579,7 +579,7 @@ function App() {
       <header className="app-header">
         <div className="logo-container">
            <button className="home-logo-btn" onClick={() => { setCurrentView('chat'); setIsChatOpen(false); }}>
-              <img src="https://i.ibb.co/LdqV8X9/logo.png" alt="Theqnew TV" />
+              <img src="https://image2url.com/r2/default/images/1773292582841-f5fb7cbb-311d-4bbc-8261-d9c6c6510101.png" alt="Theqnew TV" />
               <div className="live-pill">LIVE</div>
            </button>
            <span className="logo-text">Theqnew TV</span>
@@ -691,11 +691,11 @@ function App() {
 
       <nav className="bottom-nav">
         <button className={currentView === 'chat' ? 'active' : ''} onClick={() => { setCurrentView('chat'); setIsChatOpen(false); }}>
-          <MessageCircle size={24} />
+           <img src="https://image2url.com/r2/default/images/1773292582841-f5fb7cbb-311d-4bbc-8261-d9c6c6510101.png" alt="Chat" className="nav-logo-icon" />
           <span>Chat</span>
         </button>
-        <button onClick={() => setIsChatOpen(!isChatOpen)} className={`nav-chat-btn ${isChatOpen ? 'active' : ''}`}>
-          <img src="https://image2url.com/r2/default/images/1773292582841-f5fb7cbb-311d-4bbc-8261-d9c6c6510101.png" alt="Chat" className="nav-logo-icon" />
+        <button onClick={() => setIsChatOpen(!isChatOpen)} className={isChatOpen ? 'active' : ''}>
+          <Mail size={24} />
           <span>Inbox</span>
         </button>
         <button className={currentView === 'games' ? 'active' : ''} onClick={() => setCurrentView('games')}>
