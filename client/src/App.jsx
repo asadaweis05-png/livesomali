@@ -213,7 +213,7 @@ function App() {
       const predictions = await modelRef.current.classify(myVideo.current);
       // We target 'Porn', 'Sexy', 'Hentai' with a lower threshold (0.5 instead of 0.7) for safety
       const isNude = predictions.some(p => 
-        (p.className === 'Porn' || p.className === 'Hentai' || p.className === 'Sexy') && p.probability > 0.5
+        (p.className === 'Porn' || p.className === 'Hentai' || p.className === 'Sexy') && p.probability > 0.7
       );
       
       if (isNude) {
@@ -469,6 +469,15 @@ function App() {
     }
   }
 
+  const getFlagEmoji = (countryCode) => {
+    if (!countryCode) return '';
+    const codePoints = countryCode
+      .toUpperCase()
+      .split('')
+      .map(char => 127397 + char.charCodeAt());
+    return String.fromCodePoint(...codePoints);
+  };
+
   const sendMessage = (e) => {
     e.preventDefault();
     if (inputText.trim() && isMatched && peerId) {
@@ -568,7 +577,10 @@ function App() {
     <div className="app">
       <header className="app-header">
         <div className="logo-container">
-           <img src="https://i.ibb.co/LdqV8X9/logo.png" alt="Theqnew TV" className="app-logo" />
+           <button className="home-logo-btn" onClick={() => { setCurrentView('chat'); setIsChatOpen(false); }}>
+              <img src="https://i.ibb.co/LdqV8X9/logo.png" alt="Theqnew TV" />
+              <div className="live-pill">LIVE</div>
+           </button>
            <span className="logo-text">Theqnew TV</span>
         </div>
         <div className="header-status">
@@ -665,8 +677,11 @@ function App() {
 
       <style>{`
         .app { display: flex; flex-direction: column; height: 100vh; background: #000; overflow: hidden; }
-        .app-header { height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; background: #111; border-bottom: 1px solid #222; z-index: 100; }
-        .app-logo { height: 32px; margin-right: 10px; }
+        .app-header { height: 70px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; background: #111; border-bottom: 1px solid #222; z-index: 100; }
+        .home-logo-btn { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--accent-primary); padding: 0; background: #000; cursor: pointer; position: relative; overflow: visible; margin-right: 15px; display: flex; align-items: center; justify-content: center; }
+        .home-logo-btn img { width: 32px; height: 32px; object-fit: contain; }
+        .live-pill { position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); background: #ff4d4d; color: #fff; font-size: 0.5rem; font-weight: 900; padding: 2px 6px; border-radius: 4px; box-shadow: 0 0 10px rgba(255,77,77,0.5); }
+        .app-logo { display: none; }
         .logo-text { font-weight: 800; font-size: 1.2rem; color: #fff; }
         .header-status { font-size: 0.8rem; color: #888; display: flex; align-items: center; gap: 8px; }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; }
