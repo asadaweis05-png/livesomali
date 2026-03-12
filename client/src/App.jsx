@@ -3,7 +3,7 @@ import { Video, VideoOff, Mic, MicOff, MessageCircle, Gamepad2, SkipForward, Inf
 import io from 'socket.io-client';
 import './App.css';
 import TicTacToe from './components/TicTacToe';
-import Ludo from './components/Ludo';
+import RPS from './components/RPS';
 
 const DEFAULT_ICE_SERVERS = {
   iceServers: [
@@ -318,7 +318,7 @@ function App() {
   };
 
   return (
-    <div className={`app ${activeGame === 'ludo' ? 'ludo-mode' : ''}`}>
+    <div className="app">
       <div className="status-badge">
         <div className={isMatched ? '' : 'pulse'}></div>
         {statusText}
@@ -358,13 +358,13 @@ function App() {
       <div className="game-panel glass">
         <h4 style={{ margin: '0 0 10px 0', fontSize: '0.8rem' }}>LIVE GAMES</h4>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <button className="btn btn-primary btn-sm" style={{ width: '100%' }} onClick={isMatched ? () => setActiveGame('ludo') : undefined} disabled={!isMatched}><Gamepad2 size={16} /> Play Ludo Star</button>
-          <button className="btn btn-primary btn-sm" style={{ width: '100%', background: 'rgba(255,255,255,0.1)', borderColor: 'transparent' }} onClick={isMatched ? () => setActiveGame('ttt') : undefined} disabled={!isMatched}><Gamepad2 size={16} /> Tic Tac Toe</button>
+          <button className="btn btn-primary btn-sm" style={{ width: '100%' }} onClick={isMatched ? () => setActiveGame('ttt') : undefined} disabled={!isMatched}><Gamepad2 size={16} /> Tic Tac Toe</button>
+          <button className="btn btn-primary btn-sm" style={{ width: '100%', background: 'rgba(255,255,255,0.1)', borderColor: 'transparent' }} onClick={isMatched ? () => setActiveGame('rps') : undefined} disabled={!isMatched}><Gamepad2 size={16} /> Rock Paper Scissors</button>
         </div>
       </div>
 
       {activeGame === 'ttt' && <TicTacToe socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
-      {activeGame === 'ludo' && <Ludo socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
+      {activeGame === 'rps' && <RPS socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
 
       <div className="controls glass">
         <button className={`btn ${audioEnabled ? 'btn-primary' : 'btn-danger'}`} onClick={() => { if (stream?.getAudioTracks) { stream.getAudioTracks()[0].enabled = !audioEnabled; setAudioEnabled(!audioEnabled); } }} style={{ padding: '12px' }}>{audioEnabled ? <Mic size={20} /> : <MicOff size={20} />}</button>
