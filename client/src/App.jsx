@@ -594,7 +594,7 @@ function App() {
         <div className="video-viewport">
           <div className="video-grid-ome">
             <div className={`video-box local ${beautyFilter}`}>
-              <video playsInline muted ref={myVideo} autoPlay style={{ transform: 'scaleX(1)' }} />
+              <video playsInline muted ref={myVideo} autoPlay style={{ transform: 'scaleX(-1)' }} />
               <div className="video-label-ome">Adiga</div>
               
               <div className="local-media-controls">
