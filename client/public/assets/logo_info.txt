@@ -1,0 +1,3 @@
+/* The new logo provided by the user is linked in the App.jsx via a stable URL or local path. 
+   I will use the absolute path to the uploaded image for the local development. 
+*/
