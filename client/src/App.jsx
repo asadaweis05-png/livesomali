@@ -582,7 +582,6 @@ function App() {
               <img src="https://image2url.com/r2/default/images/1773292582841-f5fb7cbb-311d-4bbc-8261-d9c6c6510101.png" alt="Theqnew TV" />
               <div className="live-pill">LIVE</div>
            </button>
-           <span className="logo-text">Theqnew TV</span>
         </div>
         <div className="header-status">
            <div className={isMatched ? 'status-dot online' : 'status-dot pulse'}></div>
