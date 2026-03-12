@@ -38,15 +38,17 @@ const io = new Server(server, {
 let waitingUsers = [];
 const activePairs = new Map(); // socket.id -> { peerId, room }
 const userNames = new Map(); // socket.id -> name
+const userCountries = new Map(); // socket.id -> {name, code}
 
 io.on('connection', (socket) => {
   console.log(`[Socket] New connection attempt: ${socket.id}`);
 
-  socket.on('set_name', (name) => {
+  socket.on('set_identity', ({ name, country }) => {
     userNames.set(socket.id, name);
+    userCountries.set(socket.id, country);
     const info = activePairs.get(socket.id);
     if (info) {
-      socket.to(info.peerId).emit('update_remote_name', name);
+      socket.to(info.peerId).emit('update_remote_identity', { name, country });
     }
   });
 
@@ -76,9 +78,11 @@ io.on('connection', (socket) => {
 
       const myName = userNames.get(socket.id) || 'Qof';
       const peerName = userNames.get(peerId) || 'Qof';
+      const myCountry = userCountries.get(socket.id) || { name: '', code: '' };
+      const peerCountry = userCountries.get(peerId) || { name: '', code: '' };
 
-      io.to(socket.id).emit('match_found', { peerId, initiator: true, peerName });
-      io.to(peerId).emit('match_found', { peerId: socket.id, initiator: false, peerName: myName });
+      io.to(socket.id).emit('match_found', { peerId, initiator: true, peerName, peerCountry });
+      io.to(peerId).emit('match_found', { peerId: socket.id, initiator: false, peerName: myName, peerCountry: myCountry });
 
       console.log(`[Match] Paired ${socket.id} with ${peerId}`);
     } else {

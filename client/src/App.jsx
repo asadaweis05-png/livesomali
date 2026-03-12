@@ -61,6 +61,8 @@ function App() {
   const [statusText, setStatusText] = useState('Dhisaya...');
   const [userName, setUserName] = useState(localStorage.getItem('ls_name') || '');
   const [remoteName, setRemoteName] = useState('');
+  const [userCountry, setUserCountry] = useState({ name: '', code: '' });
+  const [remoteCountry, setRemoteCountry] = useState({ name: '', code: '' });
   const [beautyFilter, setBeautyFilter] = useState('none');
   const [mediaError, setMediaError] = useState(null);
   const [connectionType, setConnectionType] = useState(null);
@@ -101,10 +103,22 @@ function App() {
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
+      let name = 'Isticmaale';
       if (session?.user) {
-        const name = session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Isticmaale';
-        setUserName(name);
-        socketRef.current?.emit('set_name', name);
+        name = session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Isticmaale';
+      }
+      setUserName(name);
+      
+      // Fetch Country
+      try {
+        const res = await fetch('https://ipapi.co/json/');
+        const data = await res.json();
+        const countryData = { name: data.country_name, code: data.country_code };
+        setUserCountry(countryData);
+        socketRef.current?.emit('set_identity', { name, country: countryData });
+      } catch (e) {
+        console.error('Country fetch failed', e);
+        socketRef.current?.emit('set_identity', { name, country: { name: 'Unknown', code: '' } });
       }
     };
     checkUser();
@@ -269,7 +283,7 @@ function App() {
       setStatusText(`Error: Serverka lama heli karo`);
     });
 
-    socket.on('match_found', ({ peerId, initiator, peerName }) => {
+    socket.on('match_found', ({ peerId, initiator, peerName, peerCountry }) => {
       console.log('Match found with', peerId, 'initiator:', initiator);
       setIsMatched(true);
       isMatchedRef.current = true;
@@ -277,14 +291,18 @@ function App() {
       peerIdRef.current = peerId;
       setIsInitiator(initiator);
       setRemoteName(peerName || 'Shisheeye');
+      setRemoteCountry(peerCountry || { name: '', code: '' });
       setStatusText('Iskuxidhaaya...');
       setupPC(peerId, initiator);
       
-      // Share our name immediately
-      socket.emit('set_name', userName);
+      // Share our identity immediately
+      socket.emit('set_identity', { name: userName, country: userCountry });
     });
 
-    socket.on('update_remote_name', (name) => setRemoteName(name));
+    socket.on('update_remote_identity', ({ name, country }) => {
+      if (name) setRemoteName(name);
+      if (country) setRemoteCountry(country);
+    });
 
     socket.on('signal', async ({ signal, peerId: fromId }) => {
       if (fromId !== peerIdRef.current || !pcRef.current) return;
@@ -417,8 +435,17 @@ function App() {
     }
   };
 
+  const getFlagEmoji = (countryCode) => {
+    if (!countryCode) return '';
+    const codePoints = countryCode
+      .toUpperCase()
+      .split('')
+      .map(char => 127397 + char.charCodeAt());
+    return String.fromCodePoint(...codePoints);
+  };
+
   return (
-    <div className={`app ${activeGame ? 'vs-layout' : ''}`}>
+    <div className="app">
       <div className="status-badge">
         <div className={isMatched ? '' : 'pulse'}></div>
         {statusText}
@@ -426,57 +453,69 @@ function App() {
       </div>
 
       <div className="video-container">
-        <div className="video-wrapper glass my-vid">
-          <video playsInline muted ref={myVideo} autoPlay className={`f-${beautyFilter}`} />
-          <div className="video-label">{userName || 'Adiga'}</div>
-          {mediaError && <div className="video-off-overlay"><button className="btn btn-primary btn-sm" onClick={initMedia}><RefreshCw size={14} /> Mar kale</button></div>}
+        <div className="video-wrapper glass">
+          <video 
+            playsInline 
+            muted 
+            ref={myVideo} 
+            autoPlay 
+            className={`f-${beautyFilter}`} 
+            style={{ transform: 'scaleX(1)' }} // Force non-mirrored
+          />
+          <div className="video-label">
+            {userName || 'Adiga'} {userCountry.code && <span>{getFlagEmoji(userCountry.code)}</span>}
+          </div>
+          {mediaError && <div className="video-off-overlay"><button className="btn btn-primary btn-sm" onClick={initMedia}><RefreshCw size={14} /> Isku day mar kale</button></div>}
         </div>
-        {!activeGame && <div className="vs-divider">VS</div>}
-        <div className="video-wrapper glass peer-vid">
-          <video playsInline ref={remoteVideo} autoPlay />
+
+        <div className="video-wrapper glass">
+          <video 
+            playsInline 
+            ref={remoteVideo} 
+            autoPlay 
+            className={`f-${beautyFilter}`} // Testing if filters apply to remote too if desired, or just local
+          />
           {!remoteStream && <div className="video-placeholder">{isMatched ? 'Iskuxidhaaya...' : 'Sugaya...'}</div>}
           <div className="state-badge">
-             {remoteMuted && <div className="badge-pill">Muted</div>}
-             {remoteVideoOff && <div className="badge-pill">Off</div>}
+             {remoteMuted && <div className="badge-pill">Afka waa xiran yahay</div>}
+             {remoteVideoOff && <div className="badge-pill">Kamarada waa xiran tahay</div>}
           </div>
           {remoteNeedsPlay && (
             <div className="video-off-overlay" onClick={() => { remoteVideo.current.play(); setRemoteNeedsPlay(false); }} style={{ background: 'rgba(0,0,0,0.8)', cursor: 'pointer' }}>
-              <button className="btn btn-primary"><Play size={20} /></button>
+              <button className="btn btn-primary"><Play size={20} /> Bilow Video-ga</button>
             </div>
           )}
           <div className="video-label">
-            {remoteName || 'Shisheeye'}
-            {isMatched && <button className="btn btn-sm" style={{ padding: '2px 6px', marginLeft: '5px', fontSize: '0.55rem', background: 'rgba(255,255,255,0.1)' }} onClick={() => socketRef.current?.emit('friend_request')}>+ Saaxiib</button>}
+            {remoteName || 'Shisheeye'} {remoteCountry.code && <span>{getFlagEmoji(remoteCountry.code)} {remoteCountry.name}</span>}
+            {isMatched && <button className="btn btn-sm" style={{ padding: '4px 8px', marginLeft: '10px', fontSize: '0.6rem', background: 'rgba(255,255,255,0.1)' }} onClick={() => socketRef.current?.emit('friend_request')}>+ Saaxiib</button>}
           </div>
         </div>
       </div>
 
       <div className={`chat-panel glass ${isChatOpen ? 'active' : ''}`}>
         <div className="chat-messages">
-          {messages.length === 0 && !isMatched && <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}><p>Ku dhufo qof!</p></div>}
+          {messages.length === 0 && !isMatched && <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}><Info size={24} style={{ marginBottom: '8px' }} /><p>Cid kasta la sheekayso!</p></div>}
           {messages.map((msg, i) => <div key={i} className={`message ${msg.sent ? 'sent' : 'received'}`}>{msg.text}</div>)}
         </div>
         <form className="chat-input" onSubmit={sendMessage}>
-          <input type="text" placeholder="Farriin..." value={inputText} onChange={(e) => setInputText(e.target.value)} disabled={!isMatched} />
-          <button type="submit" className="btn btn-primary" disabled={!isMatched}><MessageCircle size={18} /></button>
+          <input type="text" placeholder={isMatched ? "Qor halkan..." : "Sugaya..."} value={inputText} onChange={(e) => setInputText(e.target.value)} disabled={!isMatched} />
+          <button type="submit" className="btn btn-primary" style={{ padding: '8px' }} disabled={!isMatched}><MessageCircle size={18} /></button>
         </form>
       </div>
 
-      {!activeGame && (
-        <div className="game-panel glass">
-          <h4 style={{ margin: '0 0 10px 0', fontSize: '0.7rem', opacity: 0.6 }}>CIYAARAHA</h4>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <button className="btn btn-primary btn-sm" style={{ width: '100%', fontSize: '0.75rem' }} onClick={isMatched ? () => setActiveGame('ttt') : undefined} disabled={!isMatched}><Gamepad2 size={14} /> Tic Tac Toe</button>
-            <button className="btn btn-primary btn-sm" style={{ width: '100%', fontSize: '0.75rem', background: 'rgba(255,255,255,0.05)', borderColor: 'transparent' }} onClick={isMatched ? () => setActiveGame('rps') : undefined} disabled={!isMatched}><Gamepad2 size={14} /> RPS</button>
-          </div>
+      <div className="game-panel glass">
+        <h4 style={{ margin: '0 0 10px 0', fontSize: '0.8rem', color: 'var(--accent-primary)' }}>LIVE GAMES</h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <button className="btn btn-primary btn-sm" style={{ width: '100%' }} onClick={isMatched ? () => setActiveGame('ttt') : undefined} disabled={!isMatched}><Gamepad2 size={16} /> Tic Tac Toe</button>
+          <button className="btn btn-primary btn-sm" style={{ width: '100%', background: 'rgba(255,255,255,0.1)', borderColor: 'transparent' }} onClick={isMatched ? () => setActiveGame('rps') : undefined} disabled={!isMatched}><Gamepad2 size={16} /> RPS</button>
         </div>
-      )}
+      </div>
 
       {activeGame === 'ttt' && <TicTacToe socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
       {activeGame === 'rps' && <RPS socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
 
       <div className="controls glass">
-        <button className={`btn btn-circle ${audioEnabled ? 'btn-primary' : 'btn-danger'}`} onClick={() => { 
+        <button className={`btn ${audioEnabled ? 'btn-primary' : 'btn-danger'}`} style={{ borderRadius: '50%', width: '48px', height: '48px', padding: 0 }} onClick={() => { 
           if (stream?.getAudioTracks) { 
             const newState = !audioEnabled;
             stream.getAudioTracks()[0].enabled = newState; 
@@ -485,7 +524,7 @@ function App() {
           } 
         }}>{audioEnabled ? <Mic size={20} /> : <MicOff size={20} />}</button>
         
-        <button className={`btn btn-circle ${videoEnabled ? 'btn-primary' : 'btn-danger'}`} onClick={() => { 
+        <button className={`btn ${videoEnabled ? 'btn-primary' : 'btn-danger'}`} style={{ borderRadius: '50%', width: '48px', height: '48px', padding: 0 }} onClick={() => { 
           if (stream?.getVideoTracks) { 
             const newState = !videoEnabled;
             stream.getVideoTracks()[0].enabled = newState; 
@@ -500,111 +539,32 @@ function App() {
           ))}
         </div>
 
-        <button className="btn btn-next" onClick={findMatch}><SkipForward size={20} /> <span className="hide-mobile">XIGA</span></button>
+        <button className="btn btn-primary btn-next" onClick={findMatch} style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)', borderRadius: '50px' }}><SkipForward size={20} /> XIGA</button>
       </div>
 
-      <button className={`chat-toggle-floating ${isChatOpen ? 'active' : ''}`} onClick={() => setIsChatOpen(!isChatOpen)}>
-        <MessageCircle size={22} />
+      <button className="chat-toggle-btn btn btn-icon btn-primary" onClick={() => setIsChatOpen(!isChatOpen)}>
+        <MessageCircle size={24} />
       </button>
 
       <style>{`
-        .app.vs-layout .video-container {
-          position: fixed;
-          top: 20px;
-          left: 50%;
-          transform: translateX(-50%);
-          display: flex;
-          flex-direction: row;
-          gap: 40px;
-          width: auto;
-          z-index: 1000;
-          padding: 0;
-        }
-        .vs-layout .video-wrapper {
-          width: 80px;
-          height: 80px;
-          border-radius: 50%;
-          border: 3px solid var(--accent-primary);
-          overflow: hidden;
-          background: #000;
-          box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
-        }
-        .vs-layout .video-label {
-          position: absolute;
-          bottom: -25px;
-          left: 50%;
-          transform: translateX(-50%);
-          font-size: 0.6rem;
-          white-space: nowrap;
-          background: none;
-        }
-        .vs-layout .video-wrapper video {
-           object-fit: cover;
-           width: 100%;
-           height: 100%;
-        }
-        .vs-layout .state-badge, .vs-layout .controls { display: none; }
-        .vs-layout .btn-next { display: none; }
-        
-        .chat-toggle-floating {
-          position: fixed;
-          bottom: 30px;
-          left: 20px;
-          width: 50px;
-          height: 50px;
-          border-radius: 50%;
-          border: none;
-          background: var(--accent-primary);
-          color: white;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-          z-index: 100;
-          transition: all 0.3s;
-        }
-        .chat-toggle-floating.active { background: #ff4d4d; transform: rotate(90deg); }
-        
-        video.f-tiktok {
-          filter: brightness(1.15) contrast(1.05) saturate(1.25) blur(0.2px);
-          box-shadow: inset 0 0 50px rgba(255,255,255,0.1);
-        }
-        .filter-shelf {
-          display: flex;
-          gap: 10px;
-          background: rgba(255,255,255,0.05);
-          padding: 8px 15px;
-          border-radius: 50px;
-          border: 1px solid rgba(255,255,255,0.1);
-        }
-        .filter-dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: 0.3s; }
-        .filter-dot.active { border-color: #fff; transform: scale(1.3); }
+        .filter-shelf { display: flex; gap: 8px; background: rgba(0,0,0,0.3); padding: 5px 15px; border-radius: 100px; border: 1px solid rgba(255,255,255,0.1); }
+        .filter-dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.2); cursor: pointer; transition: 0.2s; }
+        .filter-dot.active { border-color: #fff; transform: scale(1.2); }
         .d-none { background: #888; }
-        .d-nuru { background: #fff7ed; box-shadow: 0 0 10px #fff7ed; }
-        .d-diirran { background: #ff7e5f; box-shadow: 0 0 10px #ff7e5f; }
-        .d-soft { background: #d8b4fe; box-shadow: 0 0 10px #d8b4fe; }
-        .d-tiktok { background: linear-gradient(45deg, #00f2ea, #ff0050); border: 1px solid white; }
-
-        .btn-circle { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0 !important; }
-        .btn-next { background: linear-gradient(90deg, #8b5cf6, #ec4899); padding: 12px 25px; border-radius: 50px; font-weight: 800; letter-spacing: 1px; }
+        .d-nuru { background: #fee2e2; }
+        .d-diirran { background: #ffedd5; }
+        .d-soft { background: #f3e8ff; }
+        .d-tiktok { background: linear-gradient(45deg, #00f2ea, #ff0050); }
         
-        .vs-divider {
-           position: absolute;
-           left: 50%;
-           top: 50%;
-           transform: translate(-50%, -50%);
-           font-size: 2rem;
-           font-weight: 900;
-           color: #fff;
-           opacity: 0.2;
-           z-index: 1;
+        .chat-toggle-btn { display: none !important; }
+        @media (max-width: 1100px) {
+           .chat-toggle-btn { display: flex !important; position: fixed; bottom: 100px; right: 20px; z-index: 100; border-radius: 50%; width: 56px; height: 56px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
         }
 
-        @media (max-width: 600px) {
-          .hide-mobile { display: none; }
-          .video-container:not(.vs-layout) { padding: 10px; gap: 10px; }
-          .video-wrapper:not(.vs-layout) { border-radius: 15px; }
-        }
+        .btn-next { font-weight: 800; letter-spacing: 1px; padding: 12px 30px !important; }
+        
+        video { transition: filter 0.3s ease; }
+        video.f-tiktok { filter: brightness(1.1) contrast(1.1) saturate(1.2) blur(0.1px); }
       `}</style>
     </div>
   );
