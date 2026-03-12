@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Video, VideoOff, Mic, MicOff, MessageCircle, Gamepad2, SkipForward, Info, RefreshCw, Users, Globe, Play } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, MessageCircle, Gamepad2, SkipForward, Info, RefreshCw, Users, Globe, Play, Heart, ThumbsUp, UserPlus, Settings, Star, Mail, User, X } from 'lucide-react';
 import io from 'socket.io-client';
 import * as nsfwjs from 'nsfwjs';
 import * as faceapi from 'face-api.js';
@@ -71,6 +71,9 @@ function App() {
   const [activeGame, setActiveGame] = useState(null);
   const [remoteMuted, setRemoteMuted] = useState(false);
   const [remoteVideoOff, setRemoteVideoOff] = useState(false);
+  const [currentView, setCurrentView] = useState('chat'); // chat, games, messages, profile, favorites, settings
+  const [reactions, setReactions] = useState([]); // {id, emoji, x, y}
+  const [swipeStart, setSwipeStart] = useState(null);
 
 
   const socketRef = useRef(null);
@@ -249,6 +252,46 @@ function App() {
       myVideo.current.play().catch(() => { });
     }
   }, [stream]);
+
+  const sendReaction = (type) => {
+    if (!isMatched || !peerId) return;
+    const emojiMap = { love: '❤️', like: '👍', friend: '🤝' };
+    const emoji = emojiMap[type];
+    socketRef.current.emit('game_action', { type: 'reaction', emoji });
+    addReaction(emoji);
+  };
+
+  const addReaction = (emoji) => {
+    const id = Date.now();
+    setReactions(prev => [...prev, { id, emoji, x: Math.random() * 80 + 10, y: 80 }]);
+    setTimeout(() => {
+      setReactions(prev => prev.filter(r => r.id !== id));
+    }, 2000);
+  };
+
+  useEffect(() => {
+    const handleTouchStart = (e) => setSwipeStart(e.touches[0].clientX);
+    const handleTouchEnd = (e) => {
+      if (!swipeStart) return;
+      const diff = swipeStart - e.changedTouches[0].clientX;
+      if (Math.abs(diff) > 100) findMatch();
+      setSwipeStart(null);
+    };
+    window.addEventListener('touchstart', handleTouchStart);
+    window.addEventListener('touchend', handleTouchEnd);
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [findMatch, swipeStart]);
+
+  useEffect(() => {
+    if (socketRef.current) {
+      socketRef.current.on('game_action', (data) => {
+        if (data.type === 'reaction') addReaction(data.emoji);
+      });
+    }
+  }, [socketRef.current]);
 
   useEffect(() => {
     if (remoteVideo.current && remoteStream) {
@@ -435,136 +478,247 @@ function App() {
     }
   };
 
-  const getFlagEmoji = (countryCode) => {
-    if (!countryCode) return '';
-    const codePoints = countryCode
-      .toUpperCase()
-      .split('')
-      .map(char => 127397 + char.charCodeAt());
-    return String.fromCodePoint(...codePoints);
+  const renderView = () => {
+    switch (currentView) {
+      case 'games':
+        return (
+          <div className="view-overlay glass animate-in">
+            <button className="close-btn" onClick={() => setCurrentView('chat')}><X /></button>
+            <h3>Games</h3>
+            <div className="game-grid">
+               <div className="game-card" onClick={() => { setActiveGame('ttt'); setCurrentView('chat'); }}>
+                  <Gamepad2 size={40} />
+                  <span>Tic Tac Toe</span>
+               </div>
+               <div className="game-card" onClick={() => { setActiveGame('rps'); setCurrentView('chat'); }}>
+                  <Gamepad2 size={40} />
+                  <span>RPS</span>
+               </div>
+            </div>
+          </div>
+        );
+      case 'settings':
+        return (
+          <div className="view-overlay glass animate-in">
+             <button className="close-btn" onClick={() => setCurrentView('chat')}><X /></button>
+             <h3>Settings</h3>
+             <div className="settings-list">
+                <div className="settings-item"><span>Privacy Policy</span><Info size={18}/></div>
+                <div className="settings-item"><span>User Preferences</span><Settings size={18}/></div>
+                <div className="settings-item"><span>Language: Somali</span><Globe size={18}/></div>
+             </div>
+          </div>
+        );
+      case 'messages':
+        return (
+          <div className="view-overlay glass animate-in">
+             <button className="close-btn" onClick={() => setCurrentView('chat')}><X /></button>
+             <div className="view-header">
+                <h3>Messages</h3>
+             </div>
+             <div className="view-empty">
+                <Mail size={48} style={{ opacity: 0.3 }} />
+                <p>You have no messages yet.</p>
+             </div>
+          </div>
+        );
+      case 'favorites':
+        return (
+          <div className="view-overlay glass animate-in">
+             <button className="close-btn" onClick={() => setCurrentView('chat')}><X /></button>
+             <div className="view-header">
+                <h3>Favorites</h3>
+             </div>
+             <div className="fav-tabs">
+                <button className="active">Favorites</button>
+                <button>Favorited You</button>
+             </div>
+             <div className="view-empty">
+                <Star size={48} style={{ opacity: 0.3 }} />
+                <p>Your favorites list is empty.</p>
+             </div>
+          </div>
+        );
+      case 'profile':
+        return (
+          <div className="view-overlay glass animate-in">
+             <button className="close-btn" onClick={() => setCurrentView('chat')}><X /></button>
+             <div className="profile-container">
+                <div className="profile-header">
+                   <div className="profile-avatar">
+                      <User size={60} />
+                      <div className="avatar-edit">+</div>
+                   </div>
+                   <h2>{userName}</h2>
+                   <p>@{userName.toLowerCase().replace(/\s/g, '')}</p>
+                </div>
+                <div className="profile-actions">
+                   <button className="btn-p">Upload a Photo</button>
+                   <button className="btn-p secondary">Edit Profile</button>
+                </div>
+             </div>
+          </div>
+        );
+      default:
+        return null;
+    }
   };
 
   return (
     <div className="app">
-      <div className="status-badge">
-        <div className={isMatched ? '' : 'pulse'}></div>
-        {statusText}
-        {isMatched && connectionType && <span className="connection-pill"><Globe size={10} style={{ marginRight: 4 }} />{connectionType}</span>}
-      </div>
-
-      <div className="video-container">
-        <div className="video-wrapper glass">
-          <video 
-            playsInline 
-            muted 
-            ref={myVideo} 
-            autoPlay 
-            className={`f-${beautyFilter}`} 
-            style={{ transform: 'scaleX(1)' }} // Force non-mirrored
-          />
-          <div className="video-label">
-            {userName || 'Adiga'} {userCountry.code && <span>{getFlagEmoji(userCountry.code)}</span>}
-          </div>
-          {mediaError && <div className="video-off-overlay"><button className="btn btn-primary btn-sm" onClick={initMedia}><RefreshCw size={14} /> Isku day mar kale</button></div>}
+      <header className="app-header">
+        <div className="logo-container">
+           <img src="https://i.ibb.co/LdqV8X9/logo.png" alt="Theqnew TV" className="app-logo" />
+           <span className="logo-text">Theqnew TV</span>
         </div>
+        <div className="header-status">
+           <div className={isMatched ? 'status-dot online' : 'status-dot pulse'}></div>
+           {statusText}
+        </div>
+      </header>
 
-        <div className="video-wrapper glass">
-          <video 
-            playsInline 
-            ref={remoteVideo} 
-            autoPlay 
-            className={`f-${beautyFilter}`} // Testing if filters apply to remote too if desired, or just local
-          />
-          {!remoteStream && <div className="video-placeholder">{isMatched ? 'Iskuxidhaaya...' : 'Sugaya...'}</div>}
-          <div className="state-badge">
-             {remoteMuted && <div className="badge-pill">Afka waa xiran yahay</div>}
-             {remoteVideoOff && <div className="badge-pill">Kamarada waa xiran tahay</div>}
-          </div>
-          {remoteNeedsPlay && (
-            <div className="video-off-overlay" onClick={() => { remoteVideo.current.play(); setRemoteNeedsPlay(false); }} style={{ background: 'rgba(0,0,0,0.8)', cursor: 'pointer' }}>
-              <button className="btn btn-primary"><Play size={20} /> Bilow Video-ga</button>
+      <main className="main-content">
+        <div className="video-viewport">
+          <div className="video-grid-ome">
+            <div className={`video-box local ${beautyFilter}`}>
+              <video playsInline muted ref={myVideo} autoPlay style={{ transform: 'scaleX(1)' }} />
+              <div className="video-label-ome">Adiga</div>
+              {reactions.map(r => (
+                <div key={r.id} className="floating-emoji" style={{ left: `${r.x}%`, top: `${r.y}%` }}>{r.emoji}</div>
+              ))}
             </div>
-          )}
-          <div className="video-label">
-            {remoteName || 'Shisheeye'} {remoteCountry.code && <span>{getFlagEmoji(remoteCountry.code)} {remoteCountry.name}</span>}
-            {isMatched && <button className="btn btn-sm" style={{ padding: '4px 8px', marginLeft: '10px', fontSize: '0.6rem', background: 'rgba(255,255,255,0.1)' }} onClick={() => socketRef.current?.emit('friend_request')}>+ Saaxiib</button>}
+
+            <div className="video-box remote">
+              <video playsInline ref={remoteVideo} autoPlay />
+              {!remoteStream && (
+                <div className="video-cta">
+                   {!isMatched && (
+                     <button className="btn-ome-start" onClick={findMatch}>
+                        <Play size={32} />
+                        <span>START RADAR</span>
+                     </button>
+                   )}
+                   {isMatched && <div className="loader-ome"></div>}
+                </div>
+              )}
+              <div className="video-label-ome">
+                {remoteName} {remoteCountry.code && <span>{getFlagEmoji(remoteCountry.code)}</span>}
+              </div>
+              <div className="ome-controls-overlay">
+                 {isMatched && (
+                   <div className="reaction-bar">
+                      <button onClick={() => sendReaction('love')}><Heart size={20} fill="#ff4d4d" color="#ff4d4d" /></button>
+                      <button onClick={() => sendReaction('like')}><ThumbsUp size={20} fill="#4dabff" color="#4dabff" /></button>
+                      <button onClick={() => socketRef.current?.emit('friend_request')}><UserPlus size={20} /></button>
+                   </div>
+                 )}
+              </div>
+            </div>
+          </div>
+
+          <div className={`ome-chat-drawer ${isChatOpen ? 'active' : ''}`}>
+             <div className="ome-chat-messages">
+                {messages.map((msg, i) => (
+                  <div key={i} className={`ome-msg ${msg.sent ? 'sent' : 'received'}`}>{msg.text}</div>
+                ))}
+             </div>
+             <form className="ome-chat-input" onSubmit={sendMessage}>
+                <input type="text" placeholder="Qor farriin..." value={inputText} onChange={(e) => setInputText(e.target.value)} disabled={!isMatched} />
+                <button type="submit"><SkipForward size={20} /></button>
+             </form>
           </div>
         </div>
-      </div>
 
-      <div className={`chat-panel glass ${isChatOpen ? 'active' : ''}`}>
-        <div className="chat-messages">
-          {messages.length === 0 && !isMatched && <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}><Info size={24} style={{ marginBottom: '8px' }} /><p>Cid kasta la sheekayso!</p></div>}
-          {messages.map((msg, i) => <div key={i} className={`message ${msg.sent ? 'sent' : 'received'}`}>{msg.text}</div>)}
-        </div>
-        <form className="chat-input" onSubmit={sendMessage}>
-          <input type="text" placeholder={isMatched ? "Qor halkan..." : "Sugaya..."} value={inputText} onChange={(e) => setInputText(e.target.value)} disabled={!isMatched} />
-          <button type="submit" className="btn btn-primary" style={{ padding: '8px' }} disabled={!isMatched}><MessageCircle size={18} /></button>
-        </form>
-      </div>
+        {activeGame && (
+          <div className="game-overlay-ome animate-in">
+             <button className="close-btn" onClick={() => setActiveGame(null)}><X /></button>
+             {activeGame === 'ttt' && <TicTacToe socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
+             {activeGame === 'rps' && <RPS socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
+          </div>
+        )}
 
-      <div className="game-panel glass">
-        <h4 style={{ margin: '0 0 10px 0', fontSize: '0.8rem', color: 'var(--accent-primary)' }}>LIVE GAMES</h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <button className="btn btn-primary btn-sm" style={{ width: '100%' }} onClick={isMatched ? () => setActiveGame('ttt') : undefined} disabled={!isMatched}><Gamepad2 size={16} /> Tic Tac Toe</button>
-          <button className="btn btn-primary btn-sm" style={{ width: '100%', background: 'rgba(255,255,255,0.1)', borderColor: 'transparent' }} onClick={isMatched ? () => setActiveGame('rps') : undefined} disabled={!isMatched}><Gamepad2 size={16} /> RPS</button>
-        </div>
-      </div>
+        {renderView()}
+      </main>
 
-      {activeGame === 'ttt' && <TicTacToe socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
-      {activeGame === 'rps' && <RPS socket={socketRef.current} peerId={peerId} isInitiator={isInitiator} onDispose={() => setActiveGame(null)} />}
-
-      <div className="controls glass">
-        <button className={`btn ${audioEnabled ? 'btn-primary' : 'btn-danger'}`} style={{ borderRadius: '50%', width: '48px', height: '48px', padding: 0 }} onClick={() => { 
-          if (stream?.getAudioTracks) { 
-            const newState = !audioEnabled;
-            stream.getAudioTracks()[0].enabled = newState; 
-            setAudioEnabled(newState); 
-            socketRef.current?.emit('media_state', { audio: newState, video: videoEnabled });
-          } 
-        }}>{audioEnabled ? <Mic size={20} /> : <MicOff size={20} />}</button>
-        
-        <button className={`btn ${videoEnabled ? 'btn-primary' : 'btn-danger'}`} style={{ borderRadius: '50%', width: '48px', height: '48px', padding: 0 }} onClick={() => { 
-          if (stream?.getVideoTracks) { 
-            const newState = !videoEnabled;
-            stream.getVideoTracks()[0].enabled = newState; 
-            setVideoEnabled(newState); 
-            socketRef.current?.emit('media_state', { audio: audioEnabled, video: newState });
-          } 
-        }}>{videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}</button>
-        
-        <div className="filter-shelf">
-          {['none', 'nuru', 'diirran', 'soft', 'tiktok'].map(f => (
-            <button key={f} className={`filter-dot d-${f} ${beautyFilter === f ? 'active' : ''}`} onClick={() => setBeautyFilter(f)} />
-          ))}
-        </div>
-
-        <button className="btn btn-primary btn-next" onClick={findMatch} style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)', borderRadius: '50px' }}><SkipForward size={20} /> XIGA</button>
-      </div>
-
-      <button className="chat-toggle-btn btn btn-icon btn-primary" onClick={() => setIsChatOpen(!isChatOpen)}>
-        <MessageCircle size={24} />
-      </button>
+      <nav className="bottom-nav">
+        <button className={currentView === 'chat' ? 'active' : ''} onClick={() => { setCurrentView('chat'); setIsChatOpen(false); }}>
+          <MessageCircle size={24} />
+          <span>Chat</span>
+        </button>
+        <button onClick={() => setIsChatOpen(!isChatOpen)} className={isChatOpen ? 'active' : ''}>
+          <Mail size={24} />
+          <span>Inbox</span>
+        </button>
+        <button className={currentView === 'games' ? 'active' : ''} onClick={() => setCurrentView('games')}>
+          <Gamepad2 size={24} />
+          <span>Games</span>
+        </button>
+        <button className={currentView === 'profile' ? 'active' : ''} onClick={() => setCurrentView('profile')}>
+          <User size={24} />
+          <span>Profile</span>
+        </button>
+        <button className={currentView === 'settings' ? 'active' : ''} onClick={() => setCurrentView('settings')}>
+          <Settings size={24} />
+          <span>Rules</span>
+        </button>
+      </nav>
 
       <style>{`
-        .filter-shelf { display: flex; gap: 8px; background: rgba(0,0,0,0.3); padding: 5px 15px; border-radius: 100px; border: 1px solid rgba(255,255,255,0.1); }
-        .filter-dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.2); cursor: pointer; transition: 0.2s; }
-        .filter-dot.active { border-color: #fff; transform: scale(1.2); }
-        .d-none { background: #888; }
-        .d-nuru { background: #fee2e2; }
-        .d-diirran { background: #ffedd5; }
-        .d-soft { background: #f3e8ff; }
-        .d-tiktok { background: linear-gradient(45deg, #00f2ea, #ff0050); }
+        .app { display: flex; flex-direction: column; height: 100vh; background: #000; overflow: hidden; }
+        .app-header { height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; background: #111; border-bottom: 1px solid #222; z-index: 100; }
+        .app-logo { height: 32px; margin-right: 10px; }
+        .logo-text { font-weight: 800; font-size: 1.2rem; color: #fff; }
+        .header-status { font-size: 0.8rem; color: #888; display: flex; align-items: center; gap: 8px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; }
         
-        .chat-toggle-btn { display: none !important; }
-        @media (max-width: 1100px) {
-           .chat-toggle-btn { display: flex !important; position: fixed; bottom: 100px; right: 20px; z-index: 100; border-radius: 50%; width: 56px; height: 56px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+        .main-content { flex: 1; position: relative; overflow: hidden; }
+        .video-viewport { height: 100%; position: relative; }
+        .video-grid-ome { display: grid; grid-template-rows: 1fr 1fr; height: 100%; background: #000; }
+        
+        @media (min-width: 900px) {
+           .video-grid-ome { grid-template-rows: 1fr; grid-template-columns: 1fr 1fr; }
         }
 
-        .btn-next { font-weight: 800; letter-spacing: 1px; padding: 12px 30px !important; }
+        .video-box { position: relative; overflow: hidden; background: #111; border: 1px solid #222; }
+        .video-box video { width: 100%; height: 100%; object-fit: cover; }
+        .video-label-ome { position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.6); padding: 5px 12px; border-radius: 6px; font-size: 0.8rem; color: #fff; z-index: 10; }
         
-        video { transition: filter 0.3s ease; }
-        video.f-tiktok { filter: brightness(1.1) contrast(1.1) saturate(1.2) blur(0.1px); }
+        .btn-ome-start { display: flex; flex-direction: column; align-items: center; gap: 15px; background: none; border: none; color: #fff; cursor: pointer; transition: 0.3s; }
+        .btn-ome-start:hover { transform: scale(1.1); color: var(--accent-primary); }
+        .video-cta { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 20; background: rgba(0,0,0,0.4); }
+        
+        .bottom-nav { height: 70px; display: flex; background: #111; border-top: 1px solid #222; }
+        .bottom-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; background: none; border: none; color: #666; cursor: pointer; transition: 0.3s; }
+        .bottom-nav button.active { color: var(--accent-primary); }
+        .bottom-nav button span { font-size: 0.65rem; text-transform: uppercase; font-weight: 700; }
+
+        .reaction-bar { display: flex; gap: 15px; background: rgba(0,0,0,0.4); padding: 8px 15px; border-radius: 100px; backdrop-filter: blur(10px); }
+        .ome-controls-overlay { position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); z-index: 30; }
+        
+        .floating-emoji { position: absolute; font-size: 2rem; pointer-events: none; animation: floatUp 2s ease-out forwards; z-index: 100; }
+        @keyframes floatUp { from { transform: translateY(0) scale(0.5); opacity: 1; } to { transform: translateY(-150px) scale(1.5); opacity: 0; } }
+
+        .ome-chat-drawer { position: absolute; right: 0; top: 0; bottom: 0; width: 300px; background: rgba(0,0,0,0.8); backdrop-filter: blur(20px); border-left: 1px solid #333; transform: translateX(100%); transition: 0.3s; z-index: 50; display: flex; flex-direction: column; }
+        .ome-chat-drawer.active { transform: translateX(0); }
+        .ome-chat-messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .ome-chat-input { padding: 15px; display: flex; gap: 10px; border-top: 1px solid #222; }
+        .ome-chat-input input { flex: 1; background: #222; border: none; border-radius: 8px; padding: 10px; color: #fff; outline: none; }
+        
+        .view-overlay { position: fixed; inset: 0; background: #111; z-index: 200; padding: 60px 20px; }
+        .animate-in { animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        
+        .game-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 30px; }
+        .game-card { background: #222; padding: 30px; border-radius: 20px; display: flex; flex-direction: column; align-items: center; gap: 15px; cursor: pointer; border: 1px solid #333; }
+        .game-card:hover { border-color: var(--accent-primary); background: #2a2a2a; }
+
+        .settings-list { display: flex; flex-direction: column; gap: 15px; margin-top: 30px; }
+        .settings-item { background: #222; padding: 15px 20px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #333; }
+        
+        @media (max-width: 900px) {
+           .ome-chat-drawer { width: 100%; top: auto; height: 50vh; transform: translateY(100%); border-left: none; border-top: 1px solid #333; }
+           .ome-chat-drawer.active { transform: translateY(0); }
+        }
       `}</style>
     </div>
   );
