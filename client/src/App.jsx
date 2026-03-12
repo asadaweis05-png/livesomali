@@ -338,8 +338,9 @@ function App() {
       setStatusText('Iskuxidhaaya...');
       setupPC(peerId, initiator);
       
-      // Share our identity immediately
+      // Share our identity and initial media state immediately
       socket.emit('set_identity', { name: userName, country: userCountry });
+      socket.emit('media_state', { audio: audioEnabled, video: videoEnabled });
     });
 
     socket.on('update_remote_identity', ({ name, country }) => {
@@ -595,6 +596,32 @@ function App() {
             <div className={`video-box local ${beautyFilter}`}>
               <video playsInline muted ref={myVideo} autoPlay style={{ transform: 'scaleX(1)' }} />
               <div className="video-label-ome">Adiga</div>
+              
+              <div className="local-media-controls">
+                <button className={`media-btn ${audioEnabled ? 'active' : 'off'}`} onClick={() => {
+                  if (stream?.getAudioTracks) {
+                    const newState = !audioEnabled;
+                    stream.getAudioTracks()[0].enabled = newState;
+                    setAudioEnabled(newState);
+                    socketRef.current?.emit('media_state', { audio: newState, video: videoEnabled });
+                  }
+                }}>
+                  {audioEnabled ? <Mic size={18} /> : <MicOff size={18} />}
+                </button>
+                <button className={`media-btn ${videoEnabled ? 'active' : 'off'}`} onClick={() => {
+                  if (stream?.getVideoTracks) {
+                    const newState = !videoEnabled;
+                    stream.getVideoTracks()[0].enabled = newState;
+                    setVideoEnabled(newState);
+                    socketRef.current?.emit('media_state', { audio: audioEnabled, video: newState });
+                  }
+                }}>
+                  {videoEnabled ? <Video size={18} /> : <VideoOff size={18} />}
+                </button>
+              </div>
+
+              {!videoEnabled && <div className="video-off-notice glass">Kamarada waa dansan tahay</div>}
+              
               {reactions.map(r => (
                 <div key={r.id} className="floating-emoji" style={{ left: `${r.x}%`, top: `${r.y}%` }}>{r.emoji}</div>
               ))}
@@ -616,6 +643,12 @@ function App() {
               <div className="video-label-ome">
                 {remoteName} {remoteCountry.code && <span>{getFlagEmoji(remoteCountry.code)}</span>}
               </div>
+
+              <div className="remote-status-indicators">
+                {remoteMuted && <div className="status-pill warn"><MicOff size={12} /> Cabiran</div>}
+                {remoteVideoOff && <div className="status-pill warn"><VideoOff size={12} /> Dansan</div>}
+              </div>
+
               <div className="ome-controls-overlay">
                  {isMatched && (
                    <div className="reaction-bar">
@@ -729,7 +762,17 @@ function App() {
         .ome-chat-input { padding: 15px; display: flex; gap: 10px; border-top: 1px solid #222; }
         .ome-chat-input input { flex: 1; background: #222; border: none; border-radius: 8px; padding: 10px; color: #fff; outline: none; }
         
-        .view-overlay { position: fixed; inset: 0; background: #111; z-index: 200; padding: 60px 20px; }
+        .local-media-controls { position: absolute; top: 15px; right: 15px; display: flex; gap: 10px; z-index: 40; }
+        .media-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.5); backdrop-filter: blur(10px); color: #fff; cursor: pointer; transition: 0.3s; display: flex; align-items: center; justify-content: center; }
+        .media-btn.active { color: var(--accent-primary); border-color: var(--accent-primary); box-shadow: 0 0 15px rgba(0,212,255,0.3); }
+        .media-btn.off { color: #ff4d4d; border-color: #ff4d4d; }
+        .media-btn:hover { background: rgba(255,255,255,0.1); transform: scale(1.1); }
+
+        .video-off-notice { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); color: #888; font-size: 0.8rem; z-index: 5; }
+        
+        .remote-status-indicators { position: absolute; top: 15px; left: 15px; display: flex; flex-direction: column; gap: 8px; z-index: 40; }
+        .status-pill { background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 6px; font-size: 0.65rem; color: #fff; display: flex; align-items: center; gap: 6px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.05); }
+        .status-pill.warn { color: #ffb84d; border-color: rgba(255,184,77,0.2); }
         .animate-in { animation: fadeIn 0.3s ease; }
         @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         
